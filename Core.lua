@@ -171,6 +171,22 @@ function MJ:Migrate()
 		db.log = kept
 		db.version = 2
 	end
+	if db.version < 3 then
+		-- v2 could leave a kill half-written (no npc id), so a corpse could be looted
+		-- without its kill being counted. A corpse is always at least one kill.
+		for _, n in pairs(db.npcs) do
+			local missing = (n.looted or 0) + (n.empty or 0) - (n.kills or 0)
+			if missing > 0 then
+				n.kills = n.kills + missing
+				db.totals.kills = (db.totals.kills or 0) + missing
+			end
+		end
+		for guid, r in pairs(db.recent.kills) do
+			if r.n == nil then db.recent.kills[guid] = nil end
+			if r.s == "other" then r.s = "pending" end
+		end
+		db.version = 3
+	end
 end
 
 -- Dedupe tables survive /reload but are only needed for a short while.

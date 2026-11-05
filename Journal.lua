@@ -68,6 +68,10 @@ MJ.recentKills = {}  -- last kills this session, for XP / reputation attribution
 
 -- info = { source = "unit"|"xp"|"loot", start = GetTime() of engagement, level, name }
 function MJ:RecordKill(guid, npcId, info)
+	-- never let a secret or malformed id reach the tables (it would leave a half-written kill)
+	if type(guid) ~= "string" or type(npcId) ~= "number" or self.issecret(guid) or self.issecret(npcId) then
+		return false
+	end
 	local recent = self.db.recent.kills
 	if recent[guid] then return false end
 	info = info or {}
@@ -159,31 +163,66 @@ function MJ:RecordKill(guid, npcId, info)
 	return true
 end
 
--- After a kill, ask the client whether the corpse has loot. Corpses with no
--- loot at all count as "empty" so drop rates are per corpse, not per looted corpse.
+-- Corpse states in db.recent.kills: "pending" (outcome unknown), "empty" (no loot at all),
+-- "looted". Corpses with no loot count as "empty" so drop rates are per corpse.
+local function isOpen(r)
+	-- "other" was written by v1 (misread canLoot); treat it like pending
+	return r and (r.s == "pending" or r.s == "other")
+end
+
+function MJ:MarkEmpty(guid, why)
+	local r = self.db.recent.kills[guid]
+	if not isOpen(r) or not r.n then return end
+	r.s = "empty"
+	local n = self.db.npcs[r.n]
+	if n then n.empty = n.empty + 1 end
+	self:Bump("corpses")
+	self:Debug("empty corpse %s (%s)", self:NPCName(r.n), why)
+	self:Changed()
+end
+
+-- The client said the corpse has loot after all (loot can appear a moment after death).
+function MJ:UnmarkEmpty(guid)
+	local r = self.db.recent.kills[guid]
+	if not r or r.s ~= "empty" or not r.n then return end
+	r.s = "pending"
+	local n = self.db.npcs[r.n]
+	if n then n.empty = max(0, n.empty - 1) end
+	self:Bump("corpses", -1)
+	self:Changed()
+end
+
+-- UNIT_LOOT(unitGUID, hasLoot): the client's own notification of a corpse's loot state.
+function MJ:OnUnitLoot(guid, hasLoot)
+	if guid == nil or self.issecret(guid) or self.issecret(hasLoot) then return end
+	local r = self.db.recent.kills[guid]
+	if not r then return end
+	if hasLoot == false then
+		-- only right after the kill: later on a corpse can lose its loot by despawning
+		if time() - (r.t or 0) > 15 then return end
+		self:MarkEmpty(guid, "UNIT_LOOT")
+	elseif hasLoot == true then
+		self:UnmarkEmpty(guid)
+	end
+end
+
+-- Fallback poll after a kill. Only hasLoot matters: canLoot is false when you are simply
+-- out of range of the corpse (e.g. a kill at spell range), so it says nothing about ownership.
 function MJ:ScheduleLootCheck(guid, npcId)
 	if not CanLootUnit or not C_Timer then return end
 	local misses = 0
 	local function check()
-		local r = self.db.recent.kills[guid]
-		if not r or r.s ~= "pending" then return end
-		local ok, hasLoot, canLoot = pcall(CanLootUnit, guid)
+		if not isOpen(self.db.recent.kills[guid]) then return end
+		local ok, hasLoot = pcall(CanLootUnit, guid)
 		if not ok then return end
-		hasLoot, canLoot = S(hasLoot), S(canLoot)
-		if hasLoot == true then
-			if canLoot == false then r.s = "other" end
-		elseif hasLoot == false then
+		hasLoot = S(hasLoot)
+		if hasLoot == false then
 			misses = misses + 1
 			if misses < 2 then
 				C_Timer.After(2, check)
 				return
 			end
-			r.s = "empty"
-			local n = self.db.npcs[npcId]
-			if n then n.empty = n.empty + 1 end
-			self:Bump("corpses")
-			self:Debug("empty corpse %s", self:NPCName(npcId))
-			self:Changed()
+			self:MarkEmpty(guid, "CanLootUnit")
 		end
 	end
 	C_Timer.After(1.5, check)
@@ -199,9 +238,15 @@ function MJ:RecordCorpseLoot(guid, npcId, src)
 	recentLoot[guid] = time()
 
 	local r = self.db.recent.kills[guid]
+	if r and r.n == nil then
+		-- half-written kill from v1 (see RecordKill guard): redo it properly
+		self.db.recent.kills[guid] = nil
+		r = nil
+	end
 	if not r then
 		self:RecordKill(guid, npcId, { source = "loot", name = src.name, level = src.level })
 		r = self.db.recent.kills[guid]
+		if not r then return end
 	end
 	local n = self:GetNPC(npcId, true)
 	if src.name and not n.name then n.name = src.name end

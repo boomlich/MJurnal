@@ -85,11 +85,28 @@ end
 local function OnLoot()
 	if handled or not MJ.db then return end
 	local num = S(GetNumLootItems())
-	if not num or num == 0 then return end
+	if not num then return end
 	handled = true
 
 	local gather = lastGather and (GetTime() - lastGather.t) < 10 and lastGather.kind or nil
 	local fishing = IsFishingLoot and S(IsFishingLoot()) or false
+
+	if num == 0 then
+		-- An empty loot window has no slots to name a source, so use the corpse you opened.
+		if gather or fishing then return end
+		for _, u in ipairs({ "target", "mouseover", "softinteract" }) do
+			if S(UnitIsDead(u)) then
+				local guid = MJ.SafeGUID(u)
+				local npcId = guid and ParseGUID(guid)
+				if npcId then
+					local name, level = unitInfoFor(guid)
+					MJ:RecordCorpseLoot(guid, npcId, { items = {}, money = 0, name = name, level = level })
+					return
+				end
+			end
+		end
+		return
+	end
 
 	-- fallback when the client does not tell us the source of a slot
 	local fallbackGUID
@@ -195,3 +212,7 @@ end
 MJ:On("LOOT_READY", OnLoot)
 MJ:On("LOOT_OPENED", OnLoot)
 MJ:On("LOOT_CLOSED", function() handled = false end)
+
+MJ:On("UNIT_LOOT", function(guid, hasLoot)
+	if MJ.db then MJ:OnUnitLoot(guid, hasLoot) end
+end)
