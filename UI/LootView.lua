@@ -50,23 +50,32 @@ function UI.views.loot(c, itemId)
 		{ "Last looted", g.last and MJ.Ago(g.last.t) or "-", g.last and stampText(g.last) },
 	}, 3)
 
-	c:Section("Dropped by", "click a monster to open it")
+	local questOnly = sources[1] and sources[1].questOnly
+	if questOnly then
+		local wantedBy = MJ.WantedQuestItems()[g.name or ""]
+		c:Text("|cffff8020Quest drop:|r it only drops while a quest needs it, so rates count only corpses looted while an unfinished quest in your log wanted it."
+			.. (wantedBy and UI.Green("  Needed by a quest in your log right now.") or ""))
+	elseif g.quest then
+		c:Text(Grey("Quest item that has also dropped without the quest, so it uses normal per-corpse rates."))
+	end
+
+	c:Section("Dropped by", (questOnly and "corpses = on-quest corpses · " or "") .. "click a monster to open it")
 	local rows = {}
 	for _, s in ipairs(sources) do
 		local p = s.rate
-		local since = St.Since(s.n, s.it)
+		local since = s.since
 		rows[#rows + 1] = {
 			cells = {
-				UI.NPCLabel(s.npc), Num(s.it.drops), Num(s.it.qty), Num(s.corpses), UI.RateText(p, s.corpses), UI.OneIn(p),
-				Num(since), Num(St.KillsFor(p, 0.9)), UI.LuckText(St.Luck(s.it)),
+				UI.NPCLabel(s.npc), Num(s.drops), Num(s.it.qty), Num(s.corpses), UI.RateText(p, s.corpses), UI.OneIn(p),
+				Num(since), Num(St.KillsFor(p, 0.9)), s.questOnly and Grey("-") or UI.LuckText(St.Luck(s.it)),
 			},
 			onEnter = function(_, tt)
 				tt:SetText(MJ:NPCName(s.npc), 1, 1, 1)
-				local lo, hi = St.Wilson(s.it.drops, s.corpses)
-				tt:AddDoubleLine("Drop rate", Pct(p), 0.8, 0.8, 0.8, 1, 1, 1)
+				local lo, hi = St.Wilson(s.drops, s.corpses)
+				tt:AddDoubleLine(s.questOnly and "Drop rate while on the quest" or "Drop rate", Pct(p), 0.8, 0.8, 0.8, 1, 1, 1)
 				if lo then tt:AddDoubleLine("95% confidence", Pct(lo) .. " - " .. Pct(hi), 0.8, 0.8, 0.8, 0.8, 0.8, 0.8) end
 				tt:AddDoubleLine("Kills", Num(s.n.kills), 0.8, 0.8, 0.8, 1, 1, 1)
-				tt:AddDoubleLine("Longest dry streak", Num(s.it.dryMax or 0), 0.8, 0.8, 0.8, 1, 1, 1)
+				tt:AddDoubleLine("Longest dry streak", Num(s.dry), 0.8, 0.8, 0.8, 1, 1, 1)
 				if since > 0 and p > 0 then
 					tt:AddDoubleLine("Chance of current dry streak", Pct(St.Drought(p, since)), 0.8, 0.8, 0.8, 1, 1, 1)
 				end

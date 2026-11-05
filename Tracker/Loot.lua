@@ -125,8 +125,9 @@ local function OnLoot()
 
 	for slot = 1, num do
 		local slotType = S(GetLootSlotType(slot))
-		local _, slotName, slotQty, _, quality, _, isQuest = GetLootSlotInfo(slot)
-		slotName, slotQty, quality, isQuest = S(slotName), S(slotQty), S(quality), S(isQuest)
+		local _, slotName, slotQty, _, quality, _, isQuest, questID = GetLootSlotInfo(slot)
+		slotName, slotQty, quality, isQuest, questID = S(slotName), S(slotQty), S(quality), S(isQuest), S(questID)
+		local starter = (questID and questID ~= 0) and true or nil
 		local link = S(GetLootSlotLink(slot))
 		local itemId = link and tonumber(link:match("item:(%d+)"))
 		local isMoney = slotType == SLOT_MONEY
@@ -144,7 +145,7 @@ local function OnLoot()
 					else
 						local e = s.items[itemId]
 						if not e then
-							e = { q = 0, link = link, quality = quality, quest = isQuest or nil }
+							e = { q = 0, link = link, quality = quality, quest = isQuest or nil, starter = starter, name = slotName }
 							s.items[itemId] = e
 						end
 						e.q = e.q + ((q and q > 0) and q or slotQty or 1)
@@ -158,7 +159,7 @@ local function OnLoot()
 				else
 					local e = s.items[itemId]
 					if not e then
-						e = { q = 0, link = link, quality = quality, quest = isQuest or nil }
+						e = { q = 0, link = link, quality = quality, quest = isQuest or nil, starter = starter, name = slotName }
 						s.items[itemId] = e
 					end
 					e.q = e.q + (slotQty or 1)

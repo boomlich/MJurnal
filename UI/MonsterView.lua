@@ -8,18 +8,19 @@ local format, floor, max = string.format, math.floor, math.max
 local GATHER_LABEL = { skin = "Skinning", herb = "Herbalism", mine = "Mining", pick = "Pick Pocket" }
 UI.GATHER_LABEL = GATHER_LABEL
 
--- loot table sorting: column index -> value getter
+-- loot table sorting (one state per table): column index -> value getter
 local lootSort = { col = 4, desc = true }
+local questSort = { col = 4, desc = true }
 local SORT_GETTERS = {
 	[1] = function(r) return r.name end,
-	[2] = function(r) return r.it.drops end,
-	[3] = function(r) return r.it.qty end,
+	[2] = function(r) return r.d end,
+	[3] = function(r) return r.qOrQty end,
 	[4] = function(r) return r.p end,
 	[5] = function(r) return r.p end,
 	[6] = function(r) return r.since end,
 	[7] = function(r) return r.p end,
-	[8] = function(r) return r.it.dryMax or 0 end,
-	[9] = function(r) return St.Luck(r.it) or 0 end,
+	[8] = function(r) return r.dry end,
+	[9] = function(r) return r.last end,
 }
 
 local function confirmDelete(npcId)
@@ -39,34 +40,38 @@ local function confirmDelete(npcId)
 	StaticPopup_Show("MJURNAL_DELETE_NPC", MJ:NPCName(npcId), nil, npcId)
 end
 
-local function itemRowTooltip(tt, npcId, n, itemId, it, corpses)
+local function itemRowTooltip(tt, npcId, n, itemId, it)
 	local g = MJ.db.items[itemId]
 	if g and g.link then tt:SetHyperlink(g.link) else tt:SetItemByID(itemId) end
-	local p = St.Rate(it.drops, corpses)
-	local lo, hi = St.Wilson(it.drops, corpses)
-	local since = St.Since(n, it)
+	local d, corpses, questOnly, since, dry = St.ItemBase(n, itemId, it)
+	local p = St.Rate(d, corpses)
+	local lo, hi = St.Wilson(d, corpses)
+	local function line(l, r) tt:AddDoubleLine(l, r, 0.8, 0.8, 0.8, 1, 1, 1) end
 	tt:AddLine(" ")
 	tt:AddLine("MJurnal - from " .. MJ:NPCName(npcId), 1, 0.82, 0)
-	tt:AddDoubleLine("Drop rate", Pct(p), 1, 1, 1, 1, 1, 1)
+	tt:AddDoubleLine(questOnly and "Drop rate while on the quest" or "Drop rate", Pct(p), 1, 1, 1, 1, 1, 1)
 	if lo then tt:AddDoubleLine("95% confidence", Pct(lo) .. " - " .. Pct(hi), 0.8, 0.8, 0.8, 0.8, 0.8, 0.8) end
-	tt:AddDoubleLine("Dropped / corpses", Num(it.drops) .. " / " .. Num(corpses), 0.8, 0.8, 0.8, 1, 1, 1)
-	tt:AddDoubleLine("Total quantity", Num(it.qty), 0.8, 0.8, 0.8, 1, 1, 1)
-	tt:AddDoubleLine("Stack min / avg / max", format("%d / %.1f / %d", it.sMin or 0, it.qty / max(it.drops, 1), it.sMax or 0), 0.8, 0.8, 0.8, 1, 1, 1)
-	tt:AddDoubleLine("Corpses for 50% / 90% / 99%", format("%s / %s / %s", Num(St.KillsFor(p, 0.5)), Num(St.KillsFor(p, 0.9)), Num(St.KillsFor(p, 0.99))), 0.8, 0.8, 0.8, 1, 1, 1)
-	tt:AddDoubleLine("Corpses since last drop", Num(since), 0.8, 0.8, 0.8, 1, 1, 1)
-	if since > 0 and p then
-		tt:AddDoubleLine("Chance of a dry streak this long", Pct(St.Drought(p, since)), 0.8, 0.8, 0.8, 1, 1, 1)
+	line(questOnly and "Dropped / corpses on quest" or "Dropped / corpses", Num(d) .. " / " .. Num(corpses))
+	if questOnly and it.drops ~= d then line("Drops before tracking", Num(it.drops - d)) end
+	line("Total quantity", Num(it.qty))
+	line("Stack min / avg / max", format("%d / %.1f / %d", it.sMin or 0, it.qty / max(it.drops, 1), it.sMax or 0))
+	line("Corpses for 50% / 90% / 99%", format("%s / %s / %s", Num(St.KillsFor(p, 0.5)), Num(St.KillsFor(p, 0.9)), Num(St.KillsFor(p, 0.99))))
+	line("Corpses since last drop", Num(since))
+	if since > 0 and p then line("Chance of a dry streak this long", Pct(St.Drought(p, since))) end
+	line("Longest dry streak", Num(dry))
+	if not questOnly then
+		line("Shortest gap between drops", Num(it.gapMin))
+		line("Avg corpses per drop", it.lastAt and format("%.1f", it.lastAt / it.drops) or "-")
 	end
-	tt:AddDoubleLine("Longest dry streak", Num(it.dryMax or 0), 0.8, 0.8, 0.8, 1, 1, 1)
-	tt:AddDoubleLine("Shortest gap between drops", Num(it.gapMin), 0.8, 0.8, 0.8, 1, 1, 1)
-	tt:AddDoubleLine("Avg corpses per drop", it.lastAt and format("%.1f", it.lastAt / it.drops) or "-", 0.8, 0.8, 0.8, 1, 1, 1)
-	tt:AddDoubleLine("First drop", it.firstT and (MJ.Date(it.firstT) .. " (corpse #" .. (it.firstAt or "?") .. ")") or "-", 0.8, 0.8, 0.8, 1, 1, 1)
-	tt:AddDoubleLine("Last drop", it.lastT and (MJ.Date(it.lastT) .. " (" .. MJ.Ago(it.lastT) .. ")") or "-", 0.8, 0.8, 0.8, 1, 1, 1)
-	local luck = St.Luck(it)
-	if luck then
-		tt:AddDoubleLine("Luck", format("%.2fx over %d drops", luck, it.luckN), 0.8, 0.8, 0.8, 1, 1, 1)
+	line("First drop", it.firstT and (MJ.Date(it.firstT) .. (questOnly and "" or (" (corpse #" .. (it.firstAt or "?") .. ")"))) or "-")
+	line("Last drop", it.lastT and (MJ.Date(it.lastT) .. " (" .. MJ.Ago(it.lastT) .. ")") or "-")
+	local luck = not questOnly and St.Luck(it)
+	if luck then line("Luck", format("%.2fx over %d drops", luck, it.luckN)) end
+	if questOnly then
+		tt:AddLine("Quest drop: only counts corpses you looted while an unfinished quest in your log needed this item.", 1, 0.5, 0.2, true)
+	elseif it.quest then
+		tt:AddLine("Quest item that also drops without the quest, so it uses the normal rate.", 1, 0.5, 0.2, true)
 	end
-	if it.quest then tt:AddLine("Quest item: only drops while you are on the quest, so the rate is lower than reality.", 1, 0.5, 0.2, true) end
 	tt:AddLine("Click: open in loot journal · Shift-click: link in chat", 0.5, 0.5, 0.5)
 end
 
@@ -78,37 +83,54 @@ local function sinceText(p, since)
 	return Num(since)
 end
 
-local function renderLootTable(c, npcId, n, corpses)
+-- quest = false: normal drops table; quest = true: quest-only drops table.
+-- Returns the number of rows rendered.
+local function renderLootTable(c, npcId, n, quest)
+	local wanted = MJ.WantedQuestItems()
 	local rows = {}
 	for itemId, it in pairs(n.items) do
-		local g = MJ.db.items[itemId]
-		local p = St.Rate(it.drops, corpses) or 0
-		rows[#rows + 1] = {
-			itemId = itemId, it = it, p = p, since = St.Since(n, it),
-			name = (g and g.name) or ("Item #" .. itemId),
-		}
+		local d, corpses, questOnly, since, dry = St.ItemBase(n, itemId, it)
+		if questOnly == quest then
+			local g = MJ.db.items[itemId]
+			local name = (g and g.name) or ("Item #" .. itemId)
+			rows[#rows + 1] = {
+				itemId = itemId, it = it, d = d, corpses = corpses, p = St.Rate(d, corpses) or 0,
+				since = since, dry = dry, name = name,
+				qOrQty = quest and corpses or it.qty,
+				wanted = wanted[name] ~= nil,
+				last = quest and (wanted[name] and 1 or 0) or (St.Luck(it) or 0),
+			}
+		end
 	end
-	local getter = SORT_GETTERS[lootSort.col] or SORT_GETTERS[4]
+	if #rows == 0 then return 0 end
+	local sortState = quest and questSort or lootSort
+	local getter = SORT_GETTERS[sortState.col] or SORT_GETTERS[4]
 	table.sort(rows, function(a, b)
 		local va, vb = getter(a), getter(b)
 		if va == vb then return a.name < b.name end
-		if lootSort.desc then return va > vb end
+		if sortState.desc then return va > vb end
 		return va < vb
 	end)
 	local tableRows = {}
 	for _, r in ipairs(rows) do
 		local it, p = r.it, r.p
 		local k50, k90 = St.KillsFor(p, 0.5), St.KillsFor(p, 0.9)
+		local lastCell
+		if quest then
+			lastCell = r.wanted and UI.Green("needed") or Grey("-")
+		else
+			lastCell = UI.LuckText(St.Luck(it))
+		end
 		tableRows[#tableRows + 1] = {
 			icon = MJ:ItemIcon(r.itemId),
 			cells = {
-				MJ:ItemText(r.itemId) .. (it.quest and Grey(" (Q)") or ""),
-				Num(it.drops), Num(it.qty), UI.RateText(p, corpses), UI.OneIn(p),
+				MJ:ItemText(r.itemId) .. ((it.quest and not quest) and Grey(" (Q)") or ""),
+				Num(r.d), quest and Num(r.corpses) or Num(it.qty), UI.RateText(p, r.corpses), UI.OneIn(p),
 				sinceText(p, r.since),
 				(k50 and Num(k50) or "-") .. " / " .. (k90 and Num(k90) or "-"),
-				Num(it.dryMax or 0), UI.LuckText(St.Luck(it)),
+				Num(r.dry), lastCell,
 			},
-			onEnter = function(_, tt) itemRowTooltip(tt, npcId, n, r.itemId, it, corpses) end,
+			onEnter = function(_, tt) itemRowTooltip(tt, npcId, n, r.itemId, it) end,
 			onClick = function()
 				local g = MJ.db.items[r.itemId]
 				if IsModifiedClick("CHATLINK") and g and g.link then
@@ -119,24 +141,40 @@ local function renderLootTable(c, npcId, n, corpses)
 			end,
 		}
 	end
-	c:Table({
-		{ "Item", 196 },
-		{ "Drops", 42, "RIGHT", "Number of corpses that had this item." },
-		{ "Qty", 44, "RIGHT", "Total quantity (stacks summed)." },
-		{ "Rate", 56, "RIGHT", "Drops divided by corpses (looted + confirmed empty). Grey until 20 corpses." },
-		{ "1 in", 44, "RIGHT", "Expected corpses per drop (1 / rate)." },
-		{ "Since", 44, "RIGHT", "Corpses since the last drop. Orange/red when a dry streak this long is unlikely (<10% / <2%)." },
-		{ "50%/90%", 66, "RIGHT", "Corpses needed for a 50% / 90% chance of at least one drop." },
-		{ "Max dry", 50, "RIGHT", "Longest streak of corpses without this item." },
-		{ "Luck", 44, "RIGHT", "Average of expected/actual corpses per drop. Above 1x = luckier than average." },
-	}, tableRows, {
-		sortCol = lootSort.col, sortDesc = lootSort.desc,
+	local cols
+	if quest then
+		cols = {
+			{ "Quest item", 196 },
+			{ "Drops", 42, "RIGHT", "Drops while the quest needed it." },
+			{ "Corpses", 50, "RIGHT", "Corpses you looted while an unfinished quest in your log needed this item." },
+			{ "Rate", 56, "RIGHT", "Drops divided by on-quest corpses. Grey until 20 corpses." },
+			{ "1 in", 44, "RIGHT", "Expected on-quest corpses per drop." },
+			{ "Since", 44, "RIGHT", "On-quest corpses since the last drop." },
+			{ "50%/90%", 66, "RIGHT", "On-quest corpses needed for a 50% / 90% chance of at least one drop." },
+			{ "Max dry", 50, "RIGHT", "Longest streak of on-quest corpses without this item." },
+			{ "Now", 44, "RIGHT", "Whether a quest in your log needs it right now." },
+		}
+	else
+		cols = {
+			{ "Item", 196 },
+			{ "Drops", 42, "RIGHT", "Number of corpses that had this item." },
+			{ "Qty", 44, "RIGHT", "Total quantity (stacks summed)." },
+			{ "Rate", 56, "RIGHT", "Drops divided by corpses (looted + confirmed empty). Grey until 20 corpses." },
+			{ "1 in", 44, "RIGHT", "Expected corpses per drop (1 / rate)." },
+			{ "Since", 44, "RIGHT", "Corpses since the last drop. Orange/red when a dry streak this long is unlikely (<10% / <2%)." },
+			{ "50%/90%", 66, "RIGHT", "Corpses needed for a 50% / 90% chance of at least one drop." },
+			{ "Max dry", 50, "RIGHT", "Longest streak of corpses without this item." },
+			{ "Luck", 44, "RIGHT", "Average of expected/actual corpses per drop. Above 1x = luckier than average." },
+		}
+	end
+	c:Table(cols, tableRows, {
+		sortCol = sortState.col, sortDesc = sortState.desc,
 		onSort = function(i)
-			if lootSort.col == i then lootSort.desc = not lootSort.desc else lootSort.col, lootSort.desc = i, i ~= 1 end
+			if sortState.col == i then sortState.desc = not sortState.desc else sortState.col, sortState.desc = i, i ~= 1 end
 			UI:RenderDetail(false)
 		end,
-		empty = "Nothing looted from this monster yet.",
 	})
+	return #rows
 end
 
 local function renderGather(c, n)
@@ -350,13 +388,28 @@ function UI.views.monster(c, npcId)
 
 	-- loot table
 	c:Section("Loot", "rates per corpse · hover for full stats")
-	renderLootTable(c, npcId, n, corpses)
+	if renderLootTable(c, npcId, n, false) == 0 then
+		c:Text(Grey("Nothing looted from this monster yet."))
+	end
 	local q = St.NPCQuality(n)
 	local parts = {}
 	for quality = 0, 7 do
 		if q[quality] then parts[#parts + 1] = MJ.QualityHex(quality) .. Num(q[quality]) .. " " .. MJ.QualityName(quality) .. "|r" end
 	end
 	if #parts > 0 then c:Text("Drops by quality: " .. table.concat(parts, "  ·  ")) end
+
+	local hasQuest = false
+	for itemId, it in pairs(n.items) do
+		if St.IsQuestOnly(itemId, it) then
+			hasQuest = true
+			break
+		end
+	end
+	if hasQuest then
+		c:Section("Quest drops", "rates per corpse looted while on the quest")
+		renderLootTable(c, npcId, n, true)
+		c:Text(Grey("These only drop while a quest needs them. Corpses are only counted while an unfinished quest in your log wants the item, so the rate shows how fast you collect it while on the quest."))
+	end
 
 	renderGather(c, n)
 

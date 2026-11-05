@@ -184,7 +184,10 @@ function MJ:MarkEmpty(guid, why)
 	if not isOpen(r) or not r.n then return end
 	r.s = "empty"
 	local n = self.db.npcs[r.n]
-	if n then n.empty = n.empty + 1 end
+	if n then
+		n.empty = n.empty + 1
+		r.qn = self:CountQuestCorpse(n)
+	end
 	self:Bump("corpses")
 	self:Debug("empty corpse %s (%s)", self:NPCName(r.n), why)
 	self:Changed()
@@ -196,7 +199,11 @@ function MJ:UnmarkEmpty(guid)
 	if not r or r.s ~= "empty" or not r.n then return end
 	r.s = "pending"
 	local n = self.db.npcs[r.n]
-	if n then n.empty = max(0, n.empty - 1) end
+	if n then
+		n.empty = max(0, n.empty - 1)
+		self:CountQuestCorpse(n, -1, r.qn)
+		r.qn = nil
+	end
 	self:Bump("corpses", -1)
 	self:Changed()
 end
@@ -262,11 +269,13 @@ function MJ:RecordCorpseLoot(guid, npcId, src)
 	if r.s == "empty" then
 		n.empty = max(0, n.empty - 1)
 		self:Bump("corpses", -1)
+		self:CountQuestCorpse(n, -1, r.qn)
 	end
 	r.s = "looted"
 
 	n.looted = n.looted + 1
 	self:Bump("corpses")
+	r.qn = self:CountQuestCorpse(n)
 	local corpseIdx = n.looted + n.empty
 
 	local hasItems = next(src.items) ~= nil
@@ -326,6 +335,20 @@ function MJ:RecordNPCItemDrop(n, npcId, itemId, e, corpseIdx)
 	if e.quest then it.quest = true end
 
 	local g = self:RecordGlobalItem(itemId, e, npcId, "npc")
+	if e.starter then g.questStarter = true end
+	if e.quest and not e.starter then
+		-- quest-only bookkeeping: did it drop while the quest wanted it?
+		local name = e.name or g.name
+		if name and MJ.WantedQuestItems()[name] then
+			it.qDrops = (it.qDrops or 0) + 1
+			local idx = (n.qNeed and n.qNeed[name]) or 0
+			it.qDryMax = max(it.qDryMax or 0, idx - (it.qLastAt or 0) - 1)
+			it.qLastAt = idx
+		else
+			-- dropped without being wanted: it is a general drop after all
+			it.offQuest = (it.offQuest or 0) + 1
+		end
+	end
 	g.src = g.src or {}
 	g.src[npcId] = true
 	self:OnItemDrop(npcId, n, itemId, it, gap, e)

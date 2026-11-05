@@ -12,6 +12,7 @@ Core.lua
 Journal.lua
 Stats.lua
 Milestones.lua
+Tracker\Quests.lua
 Tracker\Units.lua
 Tracker\Loot.lua
 Tracker\Progress.lua

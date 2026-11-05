@@ -73,7 +73,8 @@ function MJ:OnItemDrop(npcId, n, itemId, it, gap, e)
 	local q = e.quality or (g and g.quality) or 1
 	local corpses = St.Corpses(n)
 	local rate = it.drops / math.max(corpses, 1)
-	local rare = corpses >= 20 and rate <= (s.alertRate or 0.05)
+	-- quest-only drops are measured on on-quest corpses only; never call them "rare" by the normal rate
+	local rare = corpses >= 20 and rate <= (s.alertRate or 0.05) and not St.IsQuestOnly(itemId, it)
 	if q >= (s.logQuality or 2) or rare then
 		self.session.notable = (self.session.notable or 0) + 1
 		self:Log({ k = "drop", npc = npcId, item = itemId, q = e.q, gap = gap, cn = corpses, d = it.drops })

@@ -51,6 +51,28 @@ function St.Luck(it)
 	return it.luckSum / it.luckN
 end
 
+-- Quest-only drop: flagged as a quest item, does not start a quest, and has never
+-- dropped while you didn't need it.
+function St.IsQuestOnly(itemId, it)
+	local g = MJ.db.items[itemId]
+	if not (it.quest or (g and g.quest)) then return false end
+	if g and g.questStarter then return false end
+	if (it.offQuest or 0) > 0 then return false end
+	return true
+end
+
+-- The numbers a drop rate is built from for one item from one monster:
+-- drops, corpses, questOnly, corpses since last drop, longest dry streak.
+-- Quest-only items only count corpses looted while the quest wanted them.
+function St.ItemBase(n, itemId, it)
+	if St.IsQuestOnly(itemId, it) then
+		local g = MJ.db.items[itemId]
+		local need = (g and g.name and n.qNeed and n.qNeed[g.name]) or 0
+		return it.qDrops or 0, need, true, max(0, need - (it.qLastAt or 0)), it.qDryMax or 0
+	end
+	return it.drops, St.Corpses(n), false, St.Since(n, it), it.dryMax or 0
+end
+
 -- Confidence label: grey numbers until we have a decent sample.
 function St.Confident(corpses)
 	return corpses and corpses >= 20
@@ -159,8 +181,11 @@ function St.ItemSources(itemId)
 		local n = MJ.db.npcs[npcId]
 		local it = n and n.items[itemId]
 		if it then
-			local c = St.Corpses(n)
-			list[#list + 1] = { npc = npcId, n = n, it = it, corpses = c, rate = St.Rate(it.drops, c) or 0 }
+			local d, c, questOnly, since, dry = St.ItemBase(n, itemId, it)
+			list[#list + 1] = {
+				npc = npcId, n = n, it = it, drops = d, corpses = c, rate = St.Rate(d, c) or 0,
+				questOnly = questOnly, since = since, dry = dry,
+			}
 		end
 	end
 	table.sort(list, function(a, b)
@@ -192,7 +217,7 @@ end
 function St.ItemLuck(itemId)
 	local sum, n = 0, 0
 	for _, s in ipairs(St.ItemSources(itemId)) do
-		if s.it.luckN then
+		if s.it.luckN and not s.questOnly then
 			sum = sum + s.it.luckSum
 			n = n + s.it.luckN
 		end
@@ -283,7 +308,10 @@ function St.AllDrops(minCorpses)
 		local c = St.Corpses(n)
 		if c >= (minCorpses or 0) then
 			for itemId, it in pairs(n.items) do
-				list[#list + 1] = { npc = npcId, n = n, item = itemId, it = it, corpses = c, rate = it.drops / max(c, 1) }
+				-- quest-only drops have their own denominator; keep them out of these rankings
+				if not St.IsQuestOnly(itemId, it) then
+					list[#list + 1] = { npc = npcId, n = n, item = itemId, it = it, corpses = c, rate = it.drops / max(c, 1) }
+				end
 			end
 		end
 	end

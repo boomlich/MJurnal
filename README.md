@@ -19,6 +19,7 @@ The journal works both ways:
   - drops, quantity, **drop rate** (with a 95% confidence interval on hover)
   - **1 in X**, corpses since the last drop, corpses needed for a **50% / 90% / 99%** chance
   - longest dry streak and a **luck** score, plus an overdue highlight when a dry streak gets unlikely
+- **Quest drops** in their own table: items that only drop while a quest needs them get a rate per corpse looted *while the quest wanted them*, with a "needed now" marker
 - Skinning, herbalism, mining and pick pocket, kept separate from normal drops
 - Time to kill, total combat time
 - Deaths: times it killed you (killing blow from the death recap) or was attacking you, kills per death, share of fights lost, its killing abilities and biggest killing blow, your level and the number of enemies on you, plus recent deaths
@@ -93,13 +94,19 @@ WoW Forever runs with the Midnight addon restrictions: addons **cannot read the 
 - Its values are secret during combat, so each fight is read a few seconds after it ends.
 - The data is aggregated per monster type per fight, not per individual hit, so killing blows and single biggest hits are not available.
 
+### Quest drops
+- The loot window marks quest items (`isQuestItem`) and items that start a quest (`questID`). Items that start a quest drop regardless, so they are normal drops.
+- For other quest items, MJurnal checks your quest log (`C_QuestLog.GetQuestObjectives`) on every corpse. A corpse only counts for that item's rate while an unfinished objective needs it.
+- If a quest item ever drops while no quest needs it, it is a general drop (some crafting goods are flagged too). It moves to the normal loot table automatically.
+
 ### Deaths
 - When you die, MJurnal first guesses the killer from the enemies targeting you.
 - A moment later it reads Blizzard's death recap (`C_DeathRecap`, the "what killed me" window) and credits whoever landed the killing blow. The other attackers count as "attacking".
 
 ### Limitations
 - A mob that dies out of sight (no target, no nameplate), gives no XP and is never looted cannot be detected.
-- Quest items are marked with **(Q)**. Their rate only counts corpses looted while you were on the quest, so it looks lower than it really is.
+- Quest drops are matched to your quest log by item name. If an objective's text doesn't contain the item name, the item is treated as a general drop.
+- Quest drops looted before this feature existed have no on-quest corpse count, so their rate starts from the first drop recorded after it.
 - In instances, the game may hide unit identities (secret values). MJurnal then skips what it can't read instead of guessing.
 
 ## Data
