@@ -100,6 +100,8 @@ local DEFAULT_SETTINGS = {
 	dropAlerts = true,    -- chat message on rare drops
 	newEntries = true,    -- chat message on new monsters / notable new items
 	rareAlerts = true,    -- chat message when a rare is spotted
+	minimapButton = true, -- show the minimap button
+	minimapAngle = 215,   -- position of the minimap button (degrees)
 	logQuality = 2,       -- log drops of this quality or better (2 = uncommon)
 	alertRate = 0.05,     -- drops with a rate at or below this are "rare drops"
 	debug = false,
@@ -400,6 +402,7 @@ end)
 local function toggleSetting(key, label)
 	MJ.db.settings[key] = not MJ.db.settings[key]
 	MJ:Print(label .. ": " .. (MJ.db.settings[key] and "|cff20ff20on|r" or "|cffff2020off|r"))
+	MJ:Fire("SETTING_CHANGED", key)
 end
 
 SLASH_MJURNAL1 = "/mj"
@@ -416,7 +419,7 @@ SlashCmdList.MJURNAL = function(msg)
 		MJ:Print("/mj loot <text> - search loot")
 		MJ:Print("/mj overview | history - open a tab")
 		MJ:Print("/mj session - print this session's numbers")
-		MJ:Print("/mj tooltip | itemtooltip | alerts | milestones - toggle features")
+		MJ:Print("/mj tooltip | itemtooltip | alerts | milestones | minimap - toggle features")
 		MJ:Print("/mj options - open settings")
 		MJ:Print("/mj debug - toggle detection debug messages")
 	elseif cmd == "debug" then
@@ -429,6 +432,8 @@ SlashCmdList.MJURNAL = function(msg)
 		toggleSetting("dropAlerts", "Rare drop alerts")
 	elseif cmd == "milestones" then
 		toggleSetting("milestones", "Milestone messages")
+	elseif cmd == "minimap" then
+		toggleSetting("minimapButton", "Minimap button")
 	elseif cmd == "options" or cmd == "config" or cmd == "settings" then
 		MJ.UI:OpenSettings()
 	elseif cmd == "overview" then
@@ -488,11 +493,7 @@ end
 
 function MJurnal_OnAddonCompartmentEnter(_, frame)
 	GameTooltip:SetOwner(frame or UIParent, "ANCHOR_LEFT")
-	GameTooltip:SetText("MJurnal")
-	local t = MJ.db and MJ.db.totals or {}
-	GameTooltip:AddLine(format("%s kills · %s corpses looted", MJ.Num(t.kills or 0), MJ.Num(t.corpses or 0)), 1, 1, 1)
-	GameTooltip:AddLine("Left-click: toggle journal", 0.7, 0.7, 0.7)
-	GameTooltip:AddLine("Right-click: settings", 0.7, 0.7, 0.7)
+	MJ.UI.FillLauncherTooltip(GameTooltip)
 	GameTooltip:Show()
 end
 

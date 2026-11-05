@@ -3,6 +3,7 @@ local _, MJ = ...
 local UI = MJ.UI
 
 local OPTIONS = {
+	{ "minimapButton", "Show minimap button" },
 	{ "unitTooltip", "Show MJurnal line on NPC tooltips" },
 	{ "itemTooltip", "Show MJurnal line on item tooltips" },
 	{ "dropAlerts", "Chat alert on rare drops (rate at or below 5%, or epic+)" },
@@ -37,7 +38,10 @@ local function build()
 		end
 		label:SetText(opt[2])
 		cb.key = opt[1]
-		cb:SetScript("OnClick", function(s) MJ.db.settings[s.key] = s:GetChecked() and true or false end)
+		cb:SetScript("OnClick", function(s)
+			MJ.db.settings[s.key] = s:GetChecked() and true or false
+			MJ:Fire("SETTING_CHANGED", s.key)
+		end)
 		panel.checks[#panel.checks + 1] = cb
 		y = y - 30
 	end
