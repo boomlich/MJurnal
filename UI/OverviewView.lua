@@ -131,12 +131,83 @@ function UI.views.overview(c)
 	end
 	c:Table({ { "Monster", 260 }, { "Taken/kill", 90, "RIGHT" }, { "Total taken", 100, "RIGHT" }, { "Kills", 70, "RIGHT" } }, rows, { empty = "Not enough data yet." })
 
-	c:Section("Nemesis", "monsters that killed you")
+	-- deaths
+	local deaths = T.deaths or 0
+	local streak = db.streak or {}
+	c:Section("Deaths", deaths > 0 and ("|cffff4040" .. Num(deaths) .. " total|r") or nil)
+	local lastDeath = St.Deaths(nil, 1)[1]
+	c:Grid({
+		{ "Deaths", Num(deaths) },
+		{ "Kills per death", deaths > 0 and format("%.1f", (T.kills or 0) / deaths) or "-" },
+		{ "Deaths today", Num((db.days[MJ.DayKey()] or {}).deaths or 0) },
+		{ "Current kill streak", Num(streak.cur or 0), "Kills since your last death (any character on the account)." },
+		{ "Best kill streak", Num(streak.best or 0), streak.bestT and ("Reached " .. MJ.Date(streak.bestT)) or nil },
+		{ "Last 7 / 30 days", Num(St.SumDays(7, "deaths")) .. " / " .. Num(St.SumDays(30, "deaths")) },
+		{ "Last death", lastDeath and MJ.Ago(lastDeath.t) or "-", lastDeath and function(tt) UI.DeathTooltip(tt, lastDeath) end },
+		{ "Time alive", streak.lastDeath and Dur(time() - streak.lastDeath) or "-", "Time since your last death (real time, any character)." },
+		{ "Environment deaths", Num((function() local s = 0 for _, v in pairs(db.deathEnv or {}) do s = s + v end return s end)()), "Falling, drowning, fatigue, lava..." },
+	}, 3)
+
+	if deaths > 0 then
+		local dvals, dkeys = St.LastDays(30, function(k) return db.days[k] and db.days[k].deaths end)
+		c:Bars(dvals, 40, function(i, tt)
+			tt:SetText(St.DayLabel(dkeys[i]), 1, 1, 1)
+			tt:AddLine(Num(dvals[i]) .. " deaths", 1, 0.3, 0.3)
+		end, St.DayLabel(dkeys[1]), "today")
+
+		c:Text(UI.Gold("Recent deaths"), GameFontNormal)
+		rows = {}
+		for _, e in ipairs(St.Deaths(nil, 10)) do
+			rows[#rows + 1] = {
+				cells = { MJ.Date(e.t), UI.DeathKiller(e), UI.DeathCause(e), e.adds and Num(e.adds) or "-", e.z or "-", MJ:CharName(e.c) },
+				onEnter = function(_, tt) UI.DeathTooltip(tt, e) end,
+				onClick = function() if e.npc and db.npcs[e.npc] then UI:Navigate(UI.TAB_MONSTERS, e.npc) end end,
+			}
+		end
+		c:Table({ { "When", 110 }, { "Killed by", 190 }, { "Killing blow", 230 }, { "Enemies", 54, "RIGHT" }, { "Zone", 150 }, { "Character", 90 } }, rows)
+	end
+
+	c:Text(UI.Gold("Nemesis") .. UI.Grey("  ·  monsters that killed you"), GameFontNormal)
 	rows = {}
 	for _, e in ipairs(St.Top(db.npcs, 10, function(_, n) return (n.deathsTo or 0) > 0 and n.deathsTo or nil end)) do
-		rows[#rows + 1] = npcRow(e.id, { UI.NPCLabel(e.id), Num(e.score), Num(e.e.kills), format("%.1f", e.e.kills / e.score) })
+		local n = e.e
+		rows[#rows + 1] = npcRow(e.id, {
+			UI.NPCLabel(e.id), Num(e.score), Num(n.deathAssists or 0), Num(n.kills), format("%.1f", n.kills / e.score),
+			Pct(e.score / max(n.kills + e.score, 1)), n.kbMax and Num(n.kbMax) or "-",
+		})
 	end
-	c:Table({ { "Monster", 260 }, { "Deaths", 70, "RIGHT" }, { "Your kills", 80, "RIGHT" }, { "Kills/death", 80, "RIGHT" } }, rows, { empty = "You haven't died yet. Nice." })
+	c:Table({
+		{ "Monster", 220 }, { "Killed you", 70, "RIGHT" }, { "Attacking", 66, "RIGHT", "Deaths where it was attacking you but did not land the killing blow." },
+		{ "Your kills", 70, "RIGHT" }, { "Kills/death", 74, "RIGHT" }, { "Fights lost", 74, "RIGHT", "Deaths / (kills + deaths)." },
+		{ "Biggest hit", 80, "RIGHT", "Biggest killing blow it dealt you." },
+	}, rows, { empty = "You haven't died yet. Nice." })
+
+	if next(db.deathZones or {}) or next(db.deathEnv or {}) then
+		rows = {}
+		for zone, k in pairs(db.deathZones or {}) do
+			rows[#rows + 1] = { k = k, cells = { zone, Num(k), Pct(k / max(deaths, 1)) } }
+		end
+		table.sort(rows, function(a, b) return a.k > b.k end)
+		c:Text(UI.Gold("Deaths by zone"), GameFontNormal)
+		c:Table({ { "Zone", 220 }, { "Deaths", 70, "RIGHT" }, { "Share", 70, "RIGHT" } }, rows, { max = 10 })
+
+		-- causes: killing abilities across all monsters + environment
+		local causes = {}
+		for npcId, n in pairs(db.npcs) do
+			for spellID, ds in pairs(n.deathSpells or {}) do
+				local label = (spellID == 0 and "Melee" or (ds.name or UI.SpellLabel(spellID)))
+				causes[#causes + 1] = { k = ds.c, cells = { label, UI.NPCLabel(npcId), Num(ds.c), Num(ds.max or 0) } }
+			end
+		end
+		for env, k in pairs(db.deathEnv or {}) do
+			causes[#causes + 1] = { k = k, cells = { UI.DeathCause({ kb = { env = env } }), UI.Grey("environment"), Num(k), "-" } }
+		end
+		if #causes > 0 then
+			table.sort(causes, function(a, b) return a.k > b.k end)
+			c:Text(UI.Gold("What killed you"), GameFontNormal)
+			c:Table({ { "Killing blow", 200 }, { "From", 200 }, { "Deaths", 70, "RIGHT" }, { "Biggest", 80, "RIGHT" } }, causes, { max = 10 })
+		end
+	end
 
 	local all = St.AllDrops(20)
 	c:Section("Rarest drops found", "lowest rate · min. 20 corpses")
@@ -202,10 +273,17 @@ function UI.views.overview(c)
 	c:Section("By character")
 	rows = {}
 	for key, ch in pairs(db.chars) do
-		rows[#rows + 1] = { k = ch.kills or 0, cells = { MJ:CharName(key), Num(ch.kills or 0), Num(ch.corpses or 0), Money(ch.money or 0), Money(ch.vendor or 0), Num(ch.xp or 0), Num(ch.deaths or 0) } }
+		local d = ch.deaths or 0
+		rows[#rows + 1] = { k = ch.kills or 0, cells = {
+			MJ:CharName(key), Num(ch.kills or 0), Num(ch.corpses or 0), Money(ch.money or 0), Money(ch.vendor or 0), Num(ch.xp or 0),
+			Num(d), d > 0 and format("%.1f", (ch.kills or 0) / d) or "-", Num(ch.bestStreak or 0),
+		} }
 	end
 	table.sort(rows, function(a, b) return a.k > b.k end)
-	c:Table({ { "Character", 150 }, { "Kills", 60, "RIGHT" }, { "Corpses", 60, "RIGHT" }, { "Gold", 100, "RIGHT" }, { "Vendor", 100, "RIGHT" }, { "XP", 70, "RIGHT" }, { "Deaths", 50, "RIGHT" } }, rows)
+	c:Table({
+		{ "Character", 140 }, { "Kills", 60, "RIGHT" }, { "Corpses", 60, "RIGHT" }, { "Gold", 100, "RIGHT" }, { "Vendor", 100, "RIGHT" },
+		{ "XP", 70, "RIGHT" }, { "Deaths", 50, "RIGHT" }, { "K/D", 50, "RIGHT" }, { "Best streak", 76, "RIGHT", "Most kills in a row without dying." },
+	}, rows)
 
 	c:Section("Drops by quality")
 	rows = {}

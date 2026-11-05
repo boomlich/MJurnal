@@ -81,6 +81,9 @@ local function MonsterElements()
 			count = MJ.Num(e.v)
 		elseif sortKey == "last" then
 			count = MJ.Ago(e.n.lastKill and e.n.lastKill.t)
+		elseif sortKey == "deaths" then
+			local d = e.n.deathsTo or 0
+			count = d > 0 and UI.Red(MJ.Num(d)) or UI.Grey("0")
 		else
 			count = MJ.Num(e.n.kills)
 		end

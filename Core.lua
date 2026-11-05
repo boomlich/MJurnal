@@ -129,6 +129,9 @@ function MJ:InitDB()
 	db.recent.kills = db.recent.kills or {}
 	db.recent.loot = db.recent.loot or {}
 	db.ui = db.ui or {}
+	db.deathZones = db.deathZones or {}
+	db.deathEnv = db.deathEnv or {}
+	db.streak = db.streak or { cur = 0, best = 0 }
 	self.db = db
 	self:Migrate()
 	self:PruneRecent()
@@ -188,6 +191,28 @@ function MJ:Migrate()
 			if r.s == "other" then r.s = "pending" end
 		end
 		db.version = 3
+	end
+	if db.version < 4 then
+		-- v4 adds per-zone death counts and first/last death per killer; rebuild them from the log
+		-- (one death per time + character, as v1-v3 logged one entry per attacker).
+		local seenDeath = {}
+		for _, e in ipairs(db.log) do
+			if e.k == "death" then
+				local key = tostring(e.t) .. "|" .. tostring(e.c)
+				if not seenDeath[key] then
+					seenDeath[key] = true
+					if e.z and e.z ~= "" then db.deathZones[e.z] = (db.deathZones[e.z] or 0) + 1 end
+					db.streak.lastDeath = math.max(db.streak.lastDeath or 0, e.t or 0)
+				end
+				local n = e.npc and db.npcs[e.npc]
+				if n then
+					local stamp = { t = e.t, c = e.c, z = e.z }
+					if not n.firstDeathTo or n.firstDeathTo.t > e.t then n.firstDeathTo = stamp end
+					if not n.lastDeathTo or n.lastDeathTo.t < e.t then n.lastDeathTo = stamp end
+				end
+			end
+		end
+		db.version = 4
 	end
 end
 

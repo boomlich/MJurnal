@@ -37,7 +37,9 @@ function UI.LogText(e)
 	elseif e.k == "rarekill" then
 		return format("Killed %s%s", npc or "?", (e.z and e.z ~= "") and (" in " .. e.z) or "")
 	elseif e.k == "death" then
-		return format("Killed by %s%s", npc or "unknown", (e.z and e.z ~= "") and (" in " .. e.z) or "")
+		local cause = e.kb and (" - " .. UI.DeathCause(e)) or ""
+		local adds = (e.adds and e.adds > 1) and UI.Grey(format(" (%d enemies)", e.adds)) or ""
+		return format("Killed by %s%s%s%s", UI.DeathKiller(e), cause, adds, (e.z and e.z ~= "") and (" in " .. e.z) or "")
 	elseif e.k == "newnpc" then
 		return format("%s%s", npc or "?", (e.z and e.z ~= "") and (" in " .. e.z) or "")
 	end
@@ -68,7 +70,8 @@ function UI.views.history(c)
 				rows[#rows + 1] = {
 					icon = e.item and MJ:ItemIcon(e.item) or nil,
 					cells = { MJ.Date(e.t), KIND_LABEL[e.k] or e.k, UI.LogText(e), MJ:CharName(e.c) },
-					onEnter = e.item and function(_, tt) tt:SetItemByID(e.item) end or nil,
+					onEnter = (e.item and function(_, tt) tt:SetItemByID(e.item) end)
+						or (e.k == "death" and function(_, tt) UI.DeathTooltip(tt, e) end) or nil,
 					onClick = function()
 						if e.item then
 							UI:Navigate(UI.TAB_LOOT, e.item)

@@ -376,6 +376,55 @@ function UI.SpellLabel(spellID)
 	return name or ("Spell " .. spellID)
 end
 
+local ENV_LABEL = {
+	FALLING = "Falling", DROWNING = "Drowning", FATIGUE = "Fatigue", FIRE = "Fire", LAVA = "Lava", SLIME = "Slime",
+}
+
+-- "Shadow Bolt (245, 32 overkill)" / "Falling" / "-" for a death record.
+function UI.DeathCause(e)
+	local kb = e.kb
+	if not kb then return UI.Grey("-") end
+	if kb.env then return ENV_LABEL[kb.env:upper()] or kb.env end
+	local name = kb.sn or UI.SpellLabel(kb.s)
+	if kb.s == 0 then name = "Melee" end
+	if kb.a then
+		local extra = (kb.o and kb.o > 0) and (", " .. MJ.Num(kb.o) .. " overkill") or ""
+		name = name .. UI.Grey(" (" .. MJ.Num(kb.a) .. extra .. ")")
+	end
+	return name
+end
+
+function UI.DeathKiller(e)
+	if e.kb and e.kb.env then return UI.Grey("environment") end
+	if e.npc then return UI.NPCLabel(e.npc) end
+	if e.kb and e.kb.src then return e.kb.src end
+	return UI.Grey("unknown")
+end
+
+-- Tooltip lines with everything recorded about one death.
+function UI.DeathTooltip(tt, e)
+	tt:SetText("Death · " .. MJ.Date(e.t), 1, 0.3, 0.3)
+	local function line(l, r) tt:AddDoubleLine(l, r, 0.8, 0.8, 0.8, 1, 1, 1) end
+	line("Killed by", UI.DeathKiller(e))
+	line("Killing blow", UI.DeathCause(e))
+	if e.o and #e.o > 0 then
+		local names = {}
+		for _, id in ipairs(e.o) do names[#names + 1] = MJ:NPCName(id) end
+		line("Also attacking", table.concat(names, ", "))
+	end
+	if e.adds then line("Enemies on you", MJ.Num(e.adds)) end
+	if e.lvl then line("Your level", e.lvl .. (e.mlvl and ("  vs  " .. e.mlvl) or "")) end
+	if e.dur then line("Fight length", MJ.Dur(e.dur)) end
+	if e.dmg then
+		line("Damage in recap", MJ.Num(e.dmg) .. (e.hits and (" in " .. e.hits .. " hits") or "")
+			.. (e.win and (" over " .. MJ.Dur(e.win)) or ""))
+	end
+	if e.hp and e.hp > 0 then line("Your max health", MJ.Num(e.hp)) end
+	line("Where", (e.z or "?") .. (e.sz and (" / " .. e.sz) or ""))
+	line("Character", MJ:CharName(e.c))
+	if e.g then line("Group", "yes") end
+end
+
 function UI.InsertLink(link)
 	if ChatEdit_InsertLink then
 		ChatEdit_InsertLink(link)

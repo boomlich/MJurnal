@@ -141,6 +141,15 @@ function MJ:RecordKill(guid, npcId, info)
 
 	-- counters
 	self:Bump("kills")
+	local streak = self.db.streak
+	streak.cur = (streak.cur or 0) + 1
+	if streak.cur > (streak.best or 0) then
+		streak.best = streak.cur
+		streak.bestT = now
+	end
+	local cd = self:CharData()
+	cd.streak = (cd.streak or 0) + 1
+	if cd.streak > (cd.bestStreak or 0) then cd.bestStreak = cd.streak end
 	local sk = self.session.npcKills
 	sk[npcId] = (sk[npcId] or 0) + 1
 	if sk[npcId] > (n.bestSession or 0) then n.bestSession = sk[npcId] end
@@ -485,17 +494,179 @@ function MJ:OnRepGain(faction, amount)
 	n.rep[faction] = (n.rep[faction] or 0) + amount
 end
 
-function MJ:RecordDeath(killers)
-	self:Bump("deaths")
-	local any = false
-	for npcId in pairs(killers) do
-		local n = self.db.npcs[npcId] or self:GetNPC(npcId, true)
-		n.deathsTo = (n.deathsTo or 0) + 1
-		self:Log({ k = "death", npc = npcId, z = (MJ.ZoneInfo()) })
-		any = true
+---------------------------------------------------------------------------
+-- Player deaths
+---------------------------------------------------------------------------
+-- A death record D (also the log entry) looks like:
+-- { k = "death", t, c, npc = killer, o = { other attackers }, z, sz, lvl = your level,
+--   mlvl = killer level, adds = enemies on you, dur = fight length, g = in group,
+--   kb = { s = spellID, sn = spell name, a = amount, o = overkill, src = name, env = type },
+--   dmg = damage in the recap, hits, win = seconds covered, hp = your max health }
+
+function MJ.NPCIdByName(name)
+	if not name then return nil end
+	for _, e in pairs(MJ.engaged or {}) do
+		if e.name == name then return e.npc end
 	end
-	if not any then self:Log({ k = "death", z = (MJ.ZoneInfo()) }) end
+	for id, m in pairs(MJ.meta) do
+		if m.name == name then return id end
+	end
+	for id, n in pairs(MJ.db.npcs) do
+		if n.name == name then return id end
+	end
+end
+
+-- Adds (sign = 1) or removes (sign = -1) one death caused by npcId.
+local function applyKiller(self, npcId, D, sign)
+	if not npcId then return end
+	local n = self:GetNPC(npcId, true)
+	n.deathsTo = max(0, (n.deathsTo or 0) + sign)
+	if D.lvl and D.mlvl then
+		n.deathDiffSum = (n.deathDiffSum or 0) + sign * (D.lvl - D.mlvl)
+		n.deathDiffN = max(0, (n.deathDiffN or 0) + sign)
+	end
+	if D.adds then n.deathAddsSum = (n.deathAddsSum or 0) + sign * D.adds end
+	if D.dur then n.deathDurSum = (n.deathDurSum or 0) + sign * D.dur end
+	if sign > 0 then
+		local stamp = { t = D.t, c = D.c, z = D.z }
+		if not n.firstDeathTo then n.firstDeathTo = stamp end
+		n.lastDeathTo = stamp
+	end
+end
+
+local function applyAssist(self, npcId, sign)
+	local n = self:GetNPC(npcId, true)
+	n.deathAssists = max(0, (n.deathAssists or 0) + sign)
+end
+
+-- info = { npc = primary killer, others = { npcIds }, adds, dur, mobLvl }
+function MJ:RecordDeath(info)
+	info = info or {}
+	local db = self.db
+	local zone, sub = MJ.ZoneInfo()
+	local D = {
+		k = "death", t = time(), c = self.charKey, npc = info.npc, z = zone, sz = sub ~= "" and sub or nil,
+		lvl = S(UnitLevel("player")), mlvl = info.mobLvl, adds = info.adds, dur = info.dur,
+		g = IsInGroup() or nil,
+	}
+	if info.others and #info.others > 0 then D.o = info.others end
+
+	self:Bump("deaths")
+	if zone ~= "" then db.deathZones[zone] = (db.deathZones[zone] or 0) + 1 end
+	db.streak.cur = 0
+	db.streak.lastDeath = D.t
+	local c = self:CharData()
+	c.streak = 0
+
+	applyKiller(self, D.npc, D, 1)
+	for _, id in ipairs(D.o or {}) do applyAssist(self, id, 1) end
+
+	self:Log(D)
+	self:ScheduleDeathRecap(D)
+	self:Debug("death: killer %s, %d enemies", D.npc and self:NPCName(D.npc) or "?", D.adds or 0)
 	self:Changed()
+end
+
+-- Finds the recap ID of your latest death through the damage meter, when it is readable.
+local function latestRecapID()
+	local DM = C_DamageMeter
+	local T = Enum and Enum.DamageMeterType
+	if not DM or not T or not T.Deaths or not DM.GetCombatSessionFromType then return nil end
+	local best
+	for _, sessionType in ipairs({ 1, 0 }) do
+		local ok, session = pcall(DM.GetCombatSessionFromType, sessionType, T.Deaths)
+		if ok and type(session) == "table" and type(session.combatSources) == "table" then
+			for _, src in ipairs(session.combatSources) do
+				local id = S(src.deathRecapID)
+				if S(src.isLocalPlayer) and id and id > 0 and (not best or id > best) then best = id end
+			end
+		end
+		if best then return best end
+	end
+end
+
+-- Reads the death recap (the "what killed me" window) a moment after death and
+-- corrects the killer to whoever landed the killing blow.
+function MJ:ScheduleDeathRecap(D)
+	if not C_DeathRecap or not C_DeathRecap.GetRecapEvents or not C_Timer then return end
+	local tries = 0
+	local function read()
+		tries = tries + 1
+		local recapID = latestRecapID()
+		local ok, events = pcall(C_DeathRecap.GetRecapEvents, recapID)
+		local kb = ok and type(events) == "table" and events[1]
+		local ready = kb and not self.issecret(kb.timestamp) and not self.issecret(kb.amount) and not self.issecret(kb.sourceName)
+		local sig = ready and (tostring(kb.timestamp) .. ":" .. tostring(kb.amount) .. ":" .. tostring(kb.sourceName))
+		if not ready or sig == self.db.streak.lastRecap then
+			if tries < 6 then C_Timer.After(2, read) end
+			return
+		end
+		self.db.streak.lastRecap = sig
+
+		local spellID = S(kb.spellId)
+		if kb.event == "SWING_DAMAGE" then spellID = 0 end
+		local env = S(kb.environmentalType)
+		D.kb = {
+			s = spellID, sn = S(kb.spellName), a = S(kb.amount), o = S(kb.overkill),
+			src = not S(kb.hideCaster) and S(kb.sourceName) or nil, env = env,
+		}
+		local total, first, last = 0, nil, nil
+		for _, ev in ipairs(events) do
+			local a, ts = S(ev.amount), S(ev.timestamp)
+			if a then total = total + a end
+			if ts then
+				first = first and math.min(first, ts) or ts
+				last = last and math.max(last, ts) or ts
+			end
+		end
+		D.dmg, D.hits = total, #events
+		if first and last then D.win = last - first end
+		local okHP, hp = pcall(C_DeathRecap.GetRecapMaxHealth, recapID)
+		D.hp = okHP and S(hp) or nil
+
+		-- the killing blow decides who gets the kill
+		local killer
+		if not env then killer = MJ.NPCIdByName(D.kb.src) end
+		if env then self.db.deathEnv[env] = (self.db.deathEnv[env] or 0) + 1 end
+		if (killer or env) and killer ~= D.npc then
+			local old = D.npc
+			applyKiller(self, old, D, -1)
+			D.npc = killer
+			if killer then applyKiller(self, killer, D, 1) end
+			if old then
+				D.o = D.o or {}
+				table.insert(D.o, old)
+				applyAssist(self, old, 1)
+			end
+			if killer and D.o then
+				for i = #D.o, 1, -1 do
+					if D.o[i] == killer then
+						table.remove(D.o, i)
+						applyAssist(self, killer, -1)
+					end
+				end
+			end
+		end
+		if D.npc then
+			local n = self.db.npcs[D.npc]
+			n.deathSpells = n.deathSpells or {}
+			local key = D.kb.s or 0
+			local ds = n.deathSpells[key]
+			if not ds then
+				ds = { c = 0 }
+				n.deathSpells[key] = ds
+			end
+			ds.c = ds.c + 1
+			ds.name = D.kb.sn or ds.name
+			if D.kb.a then
+				ds.max = max(ds.max or 0, D.kb.a)
+				n.kbMax = max(n.kbMax or 0, D.kb.a)
+			end
+		end
+		self:Debug("death recap: %s by %s (%s)", tostring(D.kb.a), tostring(D.kb.src), tostring(D.kb.sn or D.kb.env))
+		self:Changed()
+	end
+	C_Timer.After(1, read)
 end
 
 ---------------------------------------------------------------------------

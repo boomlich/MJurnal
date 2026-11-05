@@ -20,7 +20,8 @@ The journal works both ways:
   - **1 in X**, corpses since the last drop, corpses needed for a **50% / 90% / 99%** chance
   - longest dry streak and a **luck** score, plus an overdue highlight when a dry streak gets unlikely
 - Skinning, herbalism, mining and pick pocket, kept separate from normal drops
-- Time to kill, total combat time, deaths caused ("nemesis")
+- Time to kill, total combat time
+- Deaths: times it killed you (killing blow from the death recap) or was attacking you, kills per death, share of fights lost, its killing abilities and biggest killing blow, your level and the number of enemies on you, plus recent deaths
 - Damage dealt by you and your group, damage per kill (about its health), damage taken and its hardest-hitting abilities
 - XP and reputation from kills, level ranges, level difference
 - Zones and subzones, kill hotspots (click to set a map waypoint)
@@ -33,7 +34,8 @@ The journal works both ways:
 
 ### Overview & history
 - Totals, this session, today, last 7 and 30 days, all time, plus per-hour rates for the session
-- Top lists: most killed, best farm, fastest kills, hardest hitters, nemesis, rarest drops, luckiest drops, most overdue
+- Top lists: most killed, best farm, fastest kills, hardest hitters, rarest drops, luckiest drops, most overdue
+- Deaths: kills per death, current and best kill streak, time alive, deaths per day, recent deaths with killing blow, nemesis list, deaths by zone and what killed you (including falling, drowning and other environment deaths)
 - Breakdowns by creature type, classification, zone, character and item quality
 - History log of notable drops, milestones, rares spotted or killed, and deaths
 
@@ -90,6 +92,10 @@ WoW Forever runs with the Midnight addon restrictions: addons **cannot read the 
 - Damage comes from Blizzard's built-in damage meter API (`C_DamageMeter`), the same source Details! uses on Forever.
 - Its values are secret during combat, so each fight is read a few seconds after it ends.
 - The data is aggregated per monster type per fight, not per individual hit, so killing blows and single biggest hits are not available.
+
+### Deaths
+- When you die, MJurnal first guesses the killer from the enemies targeting you.
+- A moment later it reads Blizzard's death recap (`C_DeathRecap`, the "what killed me" window) and credits whoever landed the killing blow. The other attackers count as "attacking".
 
 ### Limitations
 - A mob that dies out of sight (no target, no nameplate), gives no XP and is never looted cannot be detected.

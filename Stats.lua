@@ -113,6 +113,31 @@ function St.LastDays(count, getter)
 	return vals, keys
 end
 
+-- Death log entries (newest first), optionally only those involving npcId.
+function St.Deaths(npcId, limit)
+	local out = {}
+	local log = MJ.db.log
+	for i = #log, 1, -1 do
+		local e = log[i]
+		if e.k == "death" then
+			local match = not npcId or e.npc == npcId
+			if not match and e.o then
+				for _, id in ipairs(e.o) do
+					if id == npcId then
+						match = true
+						break
+					end
+				end
+			end
+			if match then
+				out[#out + 1] = e
+				if limit and #out >= limit then break end
+			end
+		end
+	end
+	return out
+end
+
 function St.SumDays(count, field)
 	local total = 0
 	local now = time()
@@ -274,6 +299,7 @@ St.MONSTER_SORTS = {
 	{ key = "last", label = "Recent" },
 	{ key = "value", label = "Value" },
 	{ key = "items", label = "Items" },
+	{ key = "deaths", label = "Deaths" },
 }
 St.LOOT_SORTS = {
 	{ key = "drops", label = "Drops" },
@@ -298,6 +324,10 @@ function St.MonsterList(query, sortKey)
 			local e = { id = id, name = name, n = n }
 			if sortKey == "value" then e.v = St.NPCValuePerCorpse(n) or 0 end
 			if sortKey == "items" then e.v = MJ.Count(n.items) end
+			if sortKey == "deaths" then
+				-- killing blows first, then times it was attacking you when you died
+				e.v = (n.deathsTo or 0) * 10000 + (n.deathAssists or 0)
+			end
 			out[#out + 1] = e
 		end
 	end
@@ -306,8 +336,9 @@ function St.MonsterList(query, sortKey)
 		if sortKey == "last" then
 			local ta, tb = a.n.lastKill and a.n.lastKill.t or 0, b.n.lastKill and b.n.lastKill.t or 0
 			if ta ~= tb then return ta > tb end
-		elseif sortKey == "value" or sortKey == "items" then
+		elseif sortKey == "value" or sortKey == "items" or sortKey == "deaths" then
 			if a.v ~= b.v then return a.v > b.v end
+			if sortKey == "deaths" and a.n.kills ~= b.n.kills then return a.n.kills > b.n.kills end
 		else
 			if a.n.kills ~= b.n.kills then return a.n.kills > b.n.kills end
 		end

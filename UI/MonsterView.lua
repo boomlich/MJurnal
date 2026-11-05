@@ -169,6 +169,69 @@ local function renderGather(c, n)
 	end
 end
 
+local function renderDeaths(c, npcId, n)
+	local deaths, assists = n.deathsTo or 0, n.deathAssists or 0
+	c:Section("Deaths", deaths > 0 and ("|cffff4040" .. Num(deaths) .. " killing blow" .. (deaths == 1 and "" or "s") .. "|r") or nil)
+	if deaths == 0 and assists == 0 then
+		c:Text(Grey("It has never killed you."))
+		return
+	end
+	local rank
+	if deaths > 0 then
+		rank = 1
+		for _, other in pairs(MJ.db.npcs) do
+			if (other.deathsTo or 0) > deaths then rank = rank + 1 end
+		end
+	end
+	local encounters = n.kills + deaths
+	c:Grid({
+		{ "Killed you", Num(deaths), "Deaths where this monster landed the killing blow (from the death recap), or was the one fighting you." },
+		{ "Was attacking", Num(assists), "Deaths where it was attacking you, but something else got the killing blow." },
+		{ "Nemesis rank", rank and ("#" .. rank) or "-", "Your deadliest monsters, ranked by killing blows." },
+		{ "Kills per death", deaths > 0 and format("%.1f", n.kills / deaths) or "-" },
+		{ "Fights lost", encounters > 0 and Pct(deaths / encounters) or "-", "Deaths / (kills + deaths)." },
+		{ "Share of your deaths", (MJ.db.totals.deaths or 0) > 0 and Pct(deaths / MJ.db.totals.deaths) or "-" },
+		{ "Biggest killing blow", n.kbMax and Num(n.kbMax) or "-" },
+		{ "Avg level difference", (n.deathDiffN or 0) > 0 and format("%+.1f", n.deathDiffSum / n.deathDiffN) or "-", "Your level minus its level when it killed you." },
+		{ "Avg enemies on you", deaths > 0 and n.deathAddsSum and format("%.1f", n.deathAddsSum / deaths) or "-", "How many enemies were attacking you when you died." },
+		{ "Avg fight length", deaths > 0 and n.deathDurSum and Dur(n.deathDurSum / deaths) or "-" },
+		{ "First death", n.firstDeathTo and MJ.Date(n.firstDeathTo.t) or "-", n.firstDeathTo and ("By " .. MJ:CharName(n.firstDeathTo.c) .. " in " .. (n.firstDeathTo.z or "?")) },
+		{ "Last death", n.lastDeathTo and MJ.Ago(n.lastDeathTo.t) or "-", n.lastDeathTo and (MJ.Date(n.lastDeathTo.t) .. " · " .. MJ:CharName(n.lastDeathTo.c)) },
+	}, 3)
+
+	if n.deathSpells and next(n.deathSpells) then
+		local rows = {}
+		for spellID, ds in pairs(n.deathSpells) do
+			rows[#rows + 1] = {
+				c = ds.c,
+				icon = spellID ~= 0 and C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(spellID) or nil,
+				cells = { spellID == 0 and "Melee" or (ds.name or UI.SpellLabel(spellID)), Num(ds.c), Pct(ds.c / math.max(deaths, 1)), Num(ds.max or 0) },
+				onEnter = spellID ~= 0 and function(_, tt) tt:SetSpellByID(spellID) end or nil,
+			}
+		end
+		table.sort(rows, function(a, b) return a.c > b.c end)
+		c:Text(Gold("Killing blows"), GameFontNormal)
+		c:Table({ { "Ability", 200 }, { "Deaths", 60, "RIGHT" }, { "Share", 60, "RIGHT" }, { "Biggest", 80, "RIGHT" } }, rows)
+	end
+
+	local recent = St.Deaths(npcId, 8)
+	if #recent > 0 then
+		local rows = {}
+		for _, e in ipairs(recent) do
+			rows[#rows + 1] = {
+				cells = {
+					MJ.Date(e.t), e.npc == npcId and UI.Red("killed you") or UI.Grey("attacking"),
+					UI.DeathCause(e), e.adds and Num(e.adds) or "-", e.lvl and (e.lvl .. (e.mlvl and (" vs " .. e.mlvl) or "")) or "-",
+					MJ:CharName(e.c),
+				},
+				onEnter = function(_, tt) UI.DeathTooltip(tt, e) end,
+			}
+		end
+		c:Text(Gold("Recent deaths"), GameFontNormal)
+		c:Table({ { "When", 110 }, { "Role", 70 }, { "Killing blow", 210 }, { "Enemies", 54, "RIGHT" }, { "Level", 70, "RIGHT" }, { "Character", 90 } }, rows)
+	end
+end
+
 local function setWaypoint(mapID, x, y)
 	if not (C_Map and C_Map.CanSetUserWaypointOnMap and UiMapPoint) then return end
 	local ok, can = pcall(C_Map.CanSetUserWaypointOnMap, mapID)
@@ -305,8 +368,6 @@ function UI.views.monster(c, npcId)
 		{ "Slowest kill", n.ttkMax and Dur(n.ttkMax) or "-" },
 		{ "Total combat time", n.ttkSum and Dur(n.ttkSum) or "-" },
 		{ "Kills / combat hour", combatHours > 0.01 and Num((n.ttkN or 0) / combatHours) or "-" },
-		{ "Deaths caused", Num(n.deathsTo or 0), "Times you died while this monster was fighting you." },
-		{ "Kills per death", (n.deathsTo or 0) > 0 and format("%.1f", n.kills / n.deathsTo) or "-" },
 	}, 3)
 
 	local dk = n.dmgKills or 0
@@ -341,6 +402,8 @@ function UI.views.monster(c, npcId)
 		c:Text(Gold("What it hits you with"), GameFontNormal)
 		c:Table({ { "Ability", 200 }, { "Damage", 80, "RIGHT" }, { "Share", 60, "RIGHT" }, { "Per fight", 80, "RIGHT" }, { "Worst fight", 80, "RIGHT", "Most damage from this ability in a single fight." } }, rows, { max = 10 })
 	end
+
+	renderDeaths(c, npcId, n)
 
 	-- progress
 	c:Section("Experience & reputation")

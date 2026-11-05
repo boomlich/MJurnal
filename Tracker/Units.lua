@@ -212,27 +212,46 @@ MJ:On("PLAYER_ALIVE", maybeAlive)
 MJ:On("PLAYER_UNGHOST", maybeAlive)
 MJ:Listen("LOGIN", function() deathRecorded = isDead() end)
 
--- Who killed us? Mobs targeting the player, else the most recently engaged mob.
+-- Who killed us? First guess: the enemies targeting the player (your own target first),
+-- else the most recently engaged mob. The death recap corrects this a moment later.
 MJ:On("PLAYER_DEAD", function()
 	if not ready() or deathRecorded then return end
 	deathRecorded = true
-	local killers = {}
+	local now = GetTime()
+	local seen, attackers, adds = {}, {}, 0
+	local primary, primaryLvl
 	for i = 1, #scanTokens do
 		local u = scanTokens[i]
 		if Exists(u) and not S(UnitIsDead(u)) and S(UnitCanAttack("player", u)) and S(UnitIsUnit(u .. "target", "player")) then
-			local npcId = MJ.UnitNPC(u)
-			if npcId then
+			local npcId, guid = MJ.UnitNPC(u)
+			if npcId and not seen[guid] then
+				seen[guid] = true
+				adds = adds + 1
 				CaptureMeta(u, npcId)
-				killers[npcId] = true
+				if not primary then
+					primary, primaryLvl = npcId, S(UnitLevel(u))
+				elseif npcId ~= primary and not attackers[npcId] then
+					attackers[npcId] = true
+				end
 			end
 		end
 	end
-	if not next(killers) then
+	-- fight length: from the first engagement that is still part of this fight
+	local start
+	for _, e in pairs(engaged) do
+		if now - (e.last or e.start) < 10 and (not start or e.start < start) then start = e.start end
+	end
+	if not primary then
 		local best, bestT
 		for _, e in pairs(engaged) do
-			if not bestT or e.last > bestT then best, bestT = e.npc, e.last end
+			if not bestT or e.last > bestT then best, bestT, primaryLvl = e.npc, e.last, e.level end
 		end
-		if best and GetTime() - bestT < 10 then killers[best] = true end
+		if best and now - bestT < 10 then primary = best end
 	end
-	MJ:RecordDeath(killers)
+	local others = {}
+	for id in pairs(attackers) do others[#others + 1] = id end
+	MJ:RecordDeath({
+		npc = primary, others = others, mobLvl = primaryLvl and primaryLvl > 0 and primaryLvl or nil,
+		adds = adds > 0 and adds or nil, dur = start and (now - start) or nil,
+	})
 end)
