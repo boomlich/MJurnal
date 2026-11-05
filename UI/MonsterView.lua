@@ -1,0 +1,385 @@
+-- UI/MonsterView.lua: everything we know about one NPC.
+local _, MJ = ...
+local UI, St = MJ.UI, MJ.Stats
+local Num, Pct, Money, Dur = MJ.Num, MJ.Pct, MJ.Money, MJ.Dur
+local Grey, Gold = UI.Grey, UI.Gold
+local format, floor, max = string.format, math.floor, math.max
+
+local GATHER_LABEL = { skin = "Skinning", herb = "Herbalism", mine = "Mining", pick = "Pick Pocket" }
+UI.GATHER_LABEL = GATHER_LABEL
+
+-- loot table sorting: column index -> value getter
+local lootSort = { col = 4, desc = true }
+local SORT_GETTERS = {
+	[1] = function(r) return r.name end,
+	[2] = function(r) return r.it.drops end,
+	[3] = function(r) return r.it.qty end,
+	[4] = function(r) return r.p end,
+	[5] = function(r) return r.p end,
+	[6] = function(r) return r.since end,
+	[7] = function(r) return r.p end,
+	[8] = function(r) return r.it.dryMax or 0 end,
+	[9] = function(r) return St.Luck(r.it) or 0 end,
+}
+
+local function confirmDelete(npcId)
+	StaticPopupDialogs.MJURNAL_DELETE_NPC = StaticPopupDialogs.MJURNAL_DELETE_NPC or {
+		text = "Delete all journal data for %s?",
+		button1 = YES or "Yes",
+		button2 = NO or "No",
+		OnAccept = function(_, data)
+			MJ:DeleteNPC(data)
+			UI.state.selected[UI.TAB_MONSTERS] = nil
+			UI:SelectTab(UI.TAB_MONSTERS)
+		end,
+		timeout = 0,
+		whileDead = true,
+		hideOnEscape = true,
+	}
+	StaticPopup_Show("MJURNAL_DELETE_NPC", MJ:NPCName(npcId), nil, npcId)
+end
+
+local function itemRowTooltip(tt, npcId, n, itemId, it, corpses)
+	local g = MJ.db.items[itemId]
+	if g and g.link then tt:SetHyperlink(g.link) else tt:SetItemByID(itemId) end
+	local p = St.Rate(it.drops, corpses)
+	local lo, hi = St.Wilson(it.drops, corpses)
+	local since = St.Since(n, it)
+	tt:AddLine(" ")
+	tt:AddLine("MJurnal - from " .. MJ:NPCName(npcId), 1, 0.82, 0)
+	tt:AddDoubleLine("Drop rate", Pct(p), 1, 1, 1, 1, 1, 1)
+	if lo then tt:AddDoubleLine("95% confidence", Pct(lo) .. " - " .. Pct(hi), 0.8, 0.8, 0.8, 0.8, 0.8, 0.8) end
+	tt:AddDoubleLine("Dropped / corpses", Num(it.drops) .. " / " .. Num(corpses), 0.8, 0.8, 0.8, 1, 1, 1)
+	tt:AddDoubleLine("Total quantity", Num(it.qty), 0.8, 0.8, 0.8, 1, 1, 1)
+	tt:AddDoubleLine("Stack min / avg / max", format("%d / %.1f / %d", it.sMin or 0, it.qty / max(it.drops, 1), it.sMax or 0), 0.8, 0.8, 0.8, 1, 1, 1)
+	tt:AddDoubleLine("Corpses for 50% / 90% / 99%", format("%s / %s / %s", Num(St.KillsFor(p, 0.5)), Num(St.KillsFor(p, 0.9)), Num(St.KillsFor(p, 0.99))), 0.8, 0.8, 0.8, 1, 1, 1)
+	tt:AddDoubleLine("Corpses since last drop", Num(since), 0.8, 0.8, 0.8, 1, 1, 1)
+	if since > 0 and p then
+		tt:AddDoubleLine("Chance of a dry streak this long", Pct(St.Drought(p, since)), 0.8, 0.8, 0.8, 1, 1, 1)
+	end
+	tt:AddDoubleLine("Longest dry streak", Num(it.dryMax or 0), 0.8, 0.8, 0.8, 1, 1, 1)
+	tt:AddDoubleLine("Shortest gap between drops", Num(it.gapMin), 0.8, 0.8, 0.8, 1, 1, 1)
+	tt:AddDoubleLine("Avg corpses per drop", it.lastAt and format("%.1f", it.lastAt / it.drops) or "-", 0.8, 0.8, 0.8, 1, 1, 1)
+	tt:AddDoubleLine("First drop", it.firstT and (MJ.Date(it.firstT) .. " (corpse #" .. (it.firstAt or "?") .. ")") or "-", 0.8, 0.8, 0.8, 1, 1, 1)
+	tt:AddDoubleLine("Last drop", it.lastT and (MJ.Date(it.lastT) .. " (" .. MJ.Ago(it.lastT) .. ")") or "-", 0.8, 0.8, 0.8, 1, 1, 1)
+	local luck = St.Luck(it)
+	if luck then
+		tt:AddDoubleLine("Luck", format("%.2fx over %d drops", luck, it.luckN), 0.8, 0.8, 0.8, 1, 1, 1)
+	end
+	if it.quest then tt:AddLine("Quest item: only drops while you are on the quest, so the rate is lower than reality.", 1, 0.5, 0.2, true) end
+	tt:AddLine("Click: open in loot journal · Shift-click: link in chat", 0.5, 0.5, 0.5)
+end
+
+local function sinceText(p, since)
+	if not p or since == 0 then return Num(since) end
+	local d = St.Drought(p, since)
+	if d < 0.02 then return UI.Red(Num(since)) end
+	if d < 0.10 then return UI.Orange(Num(since)) end
+	return Num(since)
+end
+
+local function renderLootTable(c, npcId, n, corpses)
+	local rows = {}
+	for itemId, it in pairs(n.items) do
+		local g = MJ.db.items[itemId]
+		local p = St.Rate(it.drops, corpses) or 0
+		rows[#rows + 1] = {
+			itemId = itemId, it = it, p = p, since = St.Since(n, it),
+			name = (g and g.name) or ("Item #" .. itemId),
+		}
+	end
+	local getter = SORT_GETTERS[lootSort.col] or SORT_GETTERS[4]
+	table.sort(rows, function(a, b)
+		local va, vb = getter(a), getter(b)
+		if va == vb then return a.name < b.name end
+		if lootSort.desc then return va > vb end
+		return va < vb
+	end)
+	local tableRows = {}
+	for _, r in ipairs(rows) do
+		local it, p = r.it, r.p
+		local k50, k90 = St.KillsFor(p, 0.5), St.KillsFor(p, 0.9)
+		tableRows[#tableRows + 1] = {
+			icon = MJ:ItemIcon(r.itemId),
+			cells = {
+				MJ:ItemText(r.itemId) .. (it.quest and Grey(" (Q)") or ""),
+				Num(it.drops), Num(it.qty), UI.RateText(p, corpses), UI.OneIn(p),
+				sinceText(p, r.since),
+				(k50 and Num(k50) or "-") .. " / " .. (k90 and Num(k90) or "-"),
+				Num(it.dryMax or 0), UI.LuckText(St.Luck(it)),
+			},
+			onEnter = function(_, tt) itemRowTooltip(tt, npcId, n, r.itemId, it, corpses) end,
+			onClick = function()
+				local g = MJ.db.items[r.itemId]
+				if IsModifiedClick("CHATLINK") and g and g.link then
+					UI.InsertLink(g.link)
+				else
+					UI:Navigate(UI.TAB_LOOT, r.itemId)
+				end
+			end,
+		}
+	end
+	c:Table({
+		{ "Item", 196 },
+		{ "Drops", 42, "RIGHT", "Number of corpses that had this item." },
+		{ "Qty", 44, "RIGHT", "Total quantity (stacks summed)." },
+		{ "Rate", 56, "RIGHT", "Drops divided by corpses (looted + confirmed empty). Grey until 20 corpses." },
+		{ "1 in", 44, "RIGHT", "Expected corpses per drop (1 / rate)." },
+		{ "Since", 44, "RIGHT", "Corpses since the last drop. Orange/red when a dry streak this long is unlikely (<10% / <2%)." },
+		{ "50%/90%", 66, "RIGHT", "Corpses needed for a 50% / 90% chance of at least one drop." },
+		{ "Max dry", 50, "RIGHT", "Longest streak of corpses without this item." },
+		{ "Luck", 44, "RIGHT", "Average of expected/actual corpses per drop. Above 1x = luckier than average." },
+	}, tableRows, {
+		sortCol = lootSort.col, sortDesc = lootSort.desc,
+		onSort = function(i)
+			if lootSort.col == i then lootSort.desc = not lootSort.desc else lootSort.col, lootSort.desc = i, i ~= 1 end
+			UI:RenderDetail(false)
+		end,
+		empty = "Nothing looted from this monster yet.",
+	})
+end
+
+local function renderGather(c, n)
+	if not n.gather then return end
+	for kind, gk in pairs(n.gather) do
+		c:Section(GATHER_LABEL[kind] or kind)
+		local grid = { { kind == "pick" and "Successful" or "Times", Num(gk.count) } }
+		if kind == "pick" then
+			grid[#grid + 1] = { "Attempts", Num(gk.tries or 0) }
+			grid[#grid + 1] = { "Success rate", (gk.tries or 0) > 0 and Pct(gk.count / gk.tries) or "-" }
+		end
+		if gk.money > 0 then
+			grid[#grid + 1] = { "Money", Money(gk.money) }
+			grid[#grid + 1] = { "Avg money", Money(gk.money / max(gk.count, 1)) }
+		end
+		c:Grid(grid, 3)
+		local rows = {}
+		for itemId, it in pairs(gk.items) do
+			local p = St.Rate(it.drops, gk.count)
+			rows[#rows + 1] = {
+				sortv = p or 0,
+				icon = MJ:ItemIcon(itemId),
+				cells = { MJ:ItemText(itemId), Num(it.drops), Num(it.qty), UI.RateText(p, gk.count), UI.OneIn(p), format("%.2f", it.qty / max(gk.count, 1)) },
+				onEnter = function(_, tt) tt:SetItemByID(itemId) end,
+				onClick = function() UI:Navigate(UI.TAB_LOOT, itemId) end,
+			}
+		end
+		table.sort(rows, function(a, b) return a.sortv > b.sortv end)
+		c:Table({ { "Item", 220 }, { "Times", 50, "RIGHT" }, { "Qty", 50, "RIGHT" }, { "Rate", 60, "RIGHT" }, { "1 in", 50, "RIGHT" }, { "Avg qty", 60, "RIGHT", "Average quantity per attempt." } }, rows, { empty = "No items." })
+	end
+end
+
+local function setWaypoint(mapID, x, y)
+	if not (C_Map and C_Map.CanSetUserWaypointOnMap and UiMapPoint) then return end
+	local ok, can = pcall(C_Map.CanSetUserWaypointOnMap, mapID)
+	if not ok or not can then
+		MJ:Print("Can't place a waypoint on that map.")
+		return
+	end
+	C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(mapID, x, y))
+	if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then C_SuperTrack.SetSuperTrackedUserWaypoint(true) end
+	MJ:Print(format("Waypoint set at %.1f, %.1f.", x * 100, y * 100))
+end
+
+local function renderLocation(c, n)
+	local zoneRows = {}
+	for zone, z in pairs(n.zones) do
+		local subs = {}
+		for sub, k in pairs(z.sub) do subs[#subs + 1] = { sub, k } end
+		table.sort(subs, function(a, b) return a[2] > b[2] end)
+		zoneRows[#zoneRows + 1] = {
+			k = z.kills,
+			cells = { zone, Num(z.kills), Pct(z.kills / max(n.kills, 1)), subs[1] and subs[1][1] or Grey("-") },
+			onEnter = function(_, tt)
+				tt:SetText(zone, 1, 1, 1)
+				for _, s in ipairs(subs) do tt:AddDoubleLine(s[1], Num(s[2]), 0.8, 0.8, 0.8, 1, 1, 1) end
+			end,
+		}
+	end
+	table.sort(zoneRows, function(a, b) return a.k > b.k end)
+	c:Table({ { "Zone", 200 }, { "Kills", 60, "RIGHT" }, { "Share", 60, "RIGHT" }, { "Top subzone", 220 } }, zoneRows, { empty = "No locations recorded." })
+
+	if n.pos and next(n.pos) then
+		local rows = {}
+		for mapID, list in pairs(n.pos) do
+			local sx, sy = 0, 0
+			for _, p in ipairs(list) do sx, sy = sx + p[1], sy + p[2] end
+			local ax, ay = sx / #list, sy / #list
+			local info = C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(mapID)
+			rows[#rows + 1] = {
+				cells = { info and info.name or ("Map " .. mapID), format("%.1f, %.1f", ax * 100, ay * 100), Num(#list) },
+				onEnter = function(_, tt)
+					tt:SetText("Kill hotspot", 1, 1, 1)
+					tt:AddLine("Average position of sampled kill locations. Click to set a map waypoint.", nil, nil, nil, true)
+				end,
+				onClick = function() setWaypoint(mapID, ax, ay) end,
+			}
+		end
+		c:Table({ { "Map", 200 }, { "Hotspot", 100, "RIGHT" }, { "Samples", 60, "RIGHT" } }, rows)
+	end
+end
+
+function UI.views.monster(c, npcId)
+	local db = MJ.db
+	local n = npcId and db.npcs[npcId]
+	if not n then
+		c:Title("Monster journal", "Select a monster from the list.")
+		if not next(db.npcs) then
+			c:Text("Your journal is empty. Kill and loot something - every monster you kill (while you or your group has the tag) and every corpse you loot is recorded here.\n\nTip: bind 'Open journal for mouseover NPC' under Key Bindings > AddOns to jump straight to the monster under your mouse.")
+		end
+		return
+	end
+
+	local corpses = St.Corpses(n)
+	local G = St.Global()
+
+	-- header
+	local sub = {}
+	if n.minLvl then sub[#sub + 1] = "Level " .. (n.minLvl == n.maxLvl and n.minLvl or (n.minLvl .. "-" .. n.maxLvl)) end
+	local cl = UI.CLASS_LABEL[n.class or "normal"]
+	if cl and cl ~= "" then sub[#sub + 1] = cl end
+	if n.type then sub[#sub + 1] = n.type .. (n.family and (" (" .. n.family .. ")") or "") end
+	if G.rankKills[npcId] then sub[#sub + 1] = "#" .. G.rankKills[npcId] .. " most killed of " .. G.npcCount end
+	sub[#sub + 1] = Grey("ID " .. npcId)
+	c:Title(UI.NPCLabel(npcId), table.concat(sub, "  ·  "))
+
+	-- kills & corpses
+	c:Section("Kills & corpses")
+	local unresolved = max(0, n.kills - n.looted - n.empty)
+	local bestDay, bestDayV = St.BestDay(n.days)
+	local today = n.days[MJ.DayKey()] or 0
+	c:Grid({
+		{ "Kills", Num(n.kills), "Mobs that died while you or your group had the tag." },
+		{ "Corpses looted", Num(n.looted) },
+		{ "Empty corpses", Num(n.empty), "Kills whose corpse had no loot at all (detected automatically). Counted in the drop-rate denominator." },
+		{ "Not looted", Num(unresolved), "Kills you did not loot, or that someone else in the group had loot rights to. Not used for drop rates." },
+		{ "Loot rate", n.kills > 0 and Pct(n.looted / n.kills) or "-" },
+		{ "Corpses (rate base)", Num(corpses), "Looted + confirmed empty corpses. All drop rates use this number." },
+		{ "Solo / group kills", Num(n.soloKills or 0) .. " / " .. Num(n.groupKills or 0) },
+		{ "Kills today", Num(today) },
+		{ "Best session", Num(n.bestSession or 0), "Most kills of this monster in one play session." },
+		{ "Best day", bestDay and (Num(bestDayV) .. " (" .. St.DayLabel(bestDay) .. ")") or "-" },
+		{ "First kill", n.firstKill and MJ.Date(n.firstKill.t) or "-", n.firstKill and function(tt)
+			tt:AddLine("By " .. MJ:CharName(n.firstKill.c) .. (n.firstKill.z ~= "" and (" in " .. n.firstKill.z) or ""), 1, 1, 1)
+		end },
+		{ "Last kill", n.lastKill and MJ.Ago(n.lastKill.t) or "-", n.lastKill and function(tt)
+			tt:AddLine(MJ.Date(n.lastKill.t) .. " by " .. MJ:CharName(n.lastKill.c), 1, 1, 1)
+		end },
+	}, 3)
+
+	-- money & value
+	c:Section("Money & value")
+	local vendor = St.NPCVendor(n)
+	local combatHours = (n.ttkSum or 0) / 3600
+	c:Grid({
+		{ "Gold looted", Money(n.money) },
+		{ "Avg gold / corpse", corpses > 0 and Money(n.money / corpses) or "-" },
+		{ "Gold chance", corpses > 0 and Pct(n.moneyCorpses / corpses) or "-", "Share of corpses that had money." },
+		{ "Avg when gold drops", n.moneyCorpses > 0 and Money(n.money / n.moneyCorpses) or "-" },
+		{ "Min / max gold", n.moneyMin and (Money(n.moneyMin) .. " / " .. Money(n.moneyMax)) or "-" },
+		{ "Only gold", Num(n.moneyOnly or 0), "Corpses that had money but no items." },
+		{ "Vendor value (items)", Money(vendor), "Sum of vendor sell price x quantity for everything this monster dropped." },
+		{ "Avg vendor / corpse", corpses > 0 and Money(vendor / corpses) or "-" },
+		{ "Total value / corpse", corpses > 0 and Money((n.money + vendor) / corpses) or "-", "Gold + vendor value per corpse. Use it to compare farm spots." },
+		{ "Value / combat hour", combatHours > 0.01 and Money((n.money + vendor) / combatHours) or "-", "Gold + vendor value divided by time spent fighting this monster." },
+		{ "Distinct items", Num(MJ.Count(n.items)) },
+	}, 3)
+
+	-- loot table
+	c:Section("Loot", "rates per corpse · hover for full stats")
+	renderLootTable(c, npcId, n, corpses)
+	local q = St.NPCQuality(n)
+	local parts = {}
+	for quality = 0, 7 do
+		if q[quality] then parts[#parts + 1] = MJ.QualityHex(quality) .. Num(q[quality]) .. " " .. MJ.QualityName(quality) .. "|r" end
+	end
+	if #parts > 0 then c:Text("Drops by quality: " .. table.concat(parts, "  ·  ")) end
+
+	renderGather(c, n)
+
+	-- combat
+	c:Section("Combat")
+	c:Grid({
+		{ "Avg time to kill", n.ttkN and Dur(n.ttkSum / n.ttkN) or "-", "From the moment it engaged you/your group until it died." },
+		{ "Fastest kill", n.ttkMin and Dur(n.ttkMin) or "-" },
+		{ "Slowest kill", n.ttkMax and Dur(n.ttkMax) or "-" },
+		{ "Total combat time", n.ttkSum and Dur(n.ttkSum) or "-" },
+		{ "Kills / combat hour", combatHours > 0.01 and Num((n.ttkN or 0) / combatHours) or "-" },
+		{ "Deaths caused", Num(n.deathsTo or 0), "Times you died while this monster was fighting you." },
+		{ "Kills per death", (n.deathsTo or 0) > 0 and format("%.1f", n.kills / n.deathsTo) or "-" },
+	}, 3)
+
+	local dk = n.dmgKills or 0
+	local dmgNote = "From the built-in damage meter, read after each fight (aggregated per monster type per fight)."
+	c:Grid({
+		{ "Damage dealt (you)", Num(n.dmgMine or 0), "You and your pet. " .. dmgNote },
+		{ "Damage dealt (group)", Num(n.dmgDone or 0), dmgNote },
+		{ "Your share", (n.dmgDone or 0) > 0 and Pct((n.dmgMine or 0) / n.dmgDone) or "-" },
+		{ "Damage per kill", dk > 0 and Num(n.dmgKillDone / dk) or "-", "Group damage per kill in fights where it died. Close to its health (overkill included)." },
+		{ "Damage taken", Num(n.dmgTaken or 0), "Damage this monster type dealt to you. " .. dmgNote },
+		{ "Taken per kill", dk > 0 and Num(n.dmgKillTaken / dk) or "-" },
+		{ "Fights measured", Num(n.dmgFights or 0) },
+		{ "DPS on it", (n.ttkSum or 0) > 0 and (n.dmgMine or 0) > 0 and Num(n.dmgMine / n.ttkSum) or "-", "Your damage divided by total time in combat with it (approximate)." },
+	}, 3)
+	if MJ.damageMeterMissing then
+		c:Text(Grey("Damage stats unavailable: this client has no built-in damage meter API."))
+	end
+
+	if n.spells and next(n.spells) then
+		local rows = {}
+		local total = 0
+		for _, s in pairs(n.spells) do total = total + s.amt end
+		for spellID, s in pairs(n.spells) do
+			rows[#rows + 1] = {
+				amt = s.amt,
+				icon = spellID ~= 0 and C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(spellID) or nil,
+				cells = { UI.SpellLabel(spellID), Num(s.amt), Pct(s.amt / math.max(total, 1)), Num(s.amt / math.max(s.fights, 1)), Num(s.max or 0) },
+				onEnter = spellID ~= 0 and function(_, tt) tt:SetSpellByID(spellID) end or nil,
+			}
+		end
+		table.sort(rows, function(a, b) return a.amt > b.amt end)
+		c:Text(Gold("What it hits you with"), GameFontNormal)
+		c:Table({ { "Ability", 200 }, { "Damage", 80, "RIGHT" }, { "Share", 60, "RIGHT" }, { "Per fight", 80, "RIGHT" }, { "Worst fight", 80, "RIGHT", "Most damage from this ability in a single fight." } }, rows, { max = 10 })
+	end
+
+	-- progress
+	c:Section("Experience & reputation")
+	local diff = n.diffN and n.diffN > 0 and (n.diffSum / n.diffN) or nil
+	local grid = {
+		{ "XP from kills", Num(n.xp or 0) },
+		{ "Avg XP / kill", n.xpN and n.xpN > 0 and Num(n.xp / n.xpN) or "-", "Only kills that gave you experience." },
+		{ "Your level at kill", n.myMin and (n.myMin == n.myMax and n.myMin or (n.myMin .. "-" .. n.myMax)) or "-" },
+		{ "Avg level difference", diff and format("%+.1f", diff) or "-", "Your level minus the monster's level, averaged." },
+	}
+	if n.rep then
+		for faction, amount in pairs(n.rep) do grid[#grid + 1] = { faction, "+" .. Num(amount) } end
+	end
+	c:Grid(grid, 3)
+
+	-- location
+	c:Section("Where")
+	renderLocation(c, n)
+
+	-- characters
+	c:Section("Characters")
+	local charRows = {}
+	for key, k in pairs(n.byChar) do
+		charRows[#charRows + 1] = { k = k, cells = { MJ:CharName(key), Num(k), Pct(k / max(n.kills, 1)) } }
+	end
+	table.sort(charRows, function(a, b) return a.k > b.k end)
+	c:Table({ { "Character", 200 }, { "Kills", 60, "RIGHT" }, { "Share", 60, "RIGHT" } }, charRows)
+
+	-- history
+	c:Section("Last 30 days")
+	local vals, keys = St.LastDays(30, function(k) return n.days[k] end)
+	c:Bars(vals, 60, function(i, tt)
+		tt:SetText(St.DayLabel(keys[i]), 1, 1, 1)
+		tt:AddLine(Num(vals[i]) .. " kills", 1, 0.82, 0)
+	end, St.DayLabel(keys[1]), "today")
+
+	c:Space(6)
+	c:Button("Delete entry", 12, 120, function() confirmDelete(npcId) end)
+	c:Space(28)
+end
+
+UI.views[2] = UI.views.monster

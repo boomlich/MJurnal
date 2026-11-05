@@ -1,0 +1,26 @@
+## Interface: 16001
+## Title: |cffd4a017MJurnal|r
+## Notes: Personal monster & loot journal. Every kill, every drop, every number - based only on what you have seen yourself.
+## Version: 0.1.0
+## SavedVariables: MJurnalDB
+## IconTexture: Interface\Icons\INV_Misc_Book_09
+## AddonCompartmentFunc: MJurnal_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: MJurnal_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: MJurnal_OnAddonCompartmentLeave
+
+Core.lua
+Journal.lua
+Stats.lua
+Milestones.lua
+Tracker\Units.lua
+Tracker\Loot.lua
+Tracker\Progress.lua
+Tracker\Damage.lua
+Tooltip.lua
+UI\Widgets.lua
+UI\Frame.lua
+UI\OverviewView.lua
+UI\MonsterView.lua
+UI\LootView.lua
+UI\HistoryView.lua
+UI\Settings.lua

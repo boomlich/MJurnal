@@ -1,0 +1,8 @@
+<Bindings>
+	<Binding name="MJURNAL_TOGGLE" header="MJURNAL" category="ADDONS">
+		MJurnal_Toggle()
+	</Binding>
+	<Binding name="MJURNAL_MOUSEOVER" category="ADDONS">
+		MJurnal_OpenMouseover()
+	</Binding>
+</Bindings>
