@@ -128,7 +128,49 @@ function MJ:InitDB()
 	db.recent.loot = db.recent.loot or {}
 	db.ui = db.ui or {}
 	self.db = db
+	self:Migrate()
 	self:PruneRecent()
+end
+
+local function dec(t, key, amount)
+	if t and t[key] then t[key] = math.max(0, t[key] - (amount or 1)) end
+end
+
+function MJ:Migrate()
+	local db = self.db
+	if db.version < 2 then
+		-- v1 could record one death twice (PLAYER_DEAD fired twice). Remove duplicate
+		-- death log entries (same time, character and killer) and undo their counters.
+		-- Each PLAYER_DEAD logged one entry per killer and bumped "deaths" once, so the number
+		-- of extra events at a moment is the highest repeat count of any killer at that moment.
+		local seen, extraEvents, kept = {}, {}, {}
+		for _, e in ipairs(db.log) do
+			local dup = false
+			if e.k == "death" then
+				local moment = tostring(e.t) .. "|" .. tostring(e.c)
+				local key = moment .. "|" .. tostring(e.npc)
+				seen[key] = (seen[key] or 0) + 1
+				if seen[key] > 1 then
+					dup = true
+					if e.npc and db.npcs[e.npc] then dec(db.npcs[e.npc], "deathsTo") end
+					local m = extraEvents[moment]
+					if not m then
+						m = { t = e.t, c = e.c, n = 0 }
+						extraEvents[moment] = m
+					end
+					m.n = math.max(m.n, seen[key] - 1)
+				end
+			end
+			if not dup then kept[#kept + 1] = e end
+		end
+		for _, m in pairs(extraEvents) do
+			dec(db.totals, "deaths", m.n)
+			dec(db.days[tonumber(date("%Y%m%d", m.t))], "deaths", m.n)
+			dec(db.chars[m.c], "deaths", m.n)
+		end
+		db.log = kept
+		db.version = 2
+	end
 end
 
 -- Dedupe tables survive /reload but are only needed for a short while.

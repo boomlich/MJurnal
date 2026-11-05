@@ -197,9 +197,25 @@ MJ:On("PLAYER_REGEN_ENABLED", function()
 	if ready() then Scan() end
 end)
 
+-- PLAYER_DEAD can fire more than once for a single death (and on login while dead),
+-- so a death is only recorded once until the player is alive again.
+local deathRecorded = false
+
+local function isDead()
+	return S(UnitIsDeadOrGhost("player")) and true or false
+end
+
+local function maybeAlive()
+	if not isDead() then deathRecorded = false end
+end
+MJ:On("PLAYER_ALIVE", maybeAlive)
+MJ:On("PLAYER_UNGHOST", maybeAlive)
+MJ:Listen("LOGIN", function() deathRecorded = isDead() end)
+
 -- Who killed us? Mobs targeting the player, else the most recently engaged mob.
 MJ:On("PLAYER_DEAD", function()
-	if not ready() then return end
+	if not ready() or deathRecorded then return end
+	deathRecorded = true
 	local killers = {}
 	for i = 1, #scanTokens do
 		local u = scanTokens[i]
