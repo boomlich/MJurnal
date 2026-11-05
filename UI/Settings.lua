@@ -4,6 +4,7 @@ local UI = MJ.UI
 
 local OPTIONS = {
 	{ "minimapButton", "Show minimap button" },
+	{ "fadeMoving", "Fade the journal while moving (fully visible while the mouse is over it)" },
 	{ "unitTooltip", "Show MJurnal line on NPC tooltips" },
 	{ "itemTooltip", "Show MJurnal line on item tooltips" },
 	{ "dropAlerts", "Chat alert on rare drops (rate at or below 5%, or epic+)" },
@@ -62,9 +63,31 @@ local function build()
 	end)
 	panel.updateQ = updateQ
 
+	local FADE_STEPS = { 0.2, 0.35, 0.5, 0.65, 0.8 }
+	local fLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+	fLabel:SetPoint("TOPLEFT", 20, y - 44)
+	fLabel:SetText("Opacity while moving:")
+	local fBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+	fBtn:SetSize(80, 22)
+	fBtn:SetPoint("LEFT", fLabel, "RIGHT", 10, 0)
+	local function updateF()
+		fBtn:SetText(math.floor((MJ.db.settings.fadeAlpha or 0.35) * 100 + 0.5) .. "%")
+	end
+	fBtn:SetScript("OnClick", function()
+		local cur, nextA = MJ.db.settings.fadeAlpha or 0.35, FADE_STEPS[1]
+		for _, a in ipairs(FADE_STEPS) do
+			if a > cur + 0.001 then
+				nextA = a
+				break
+			end
+		end
+		MJ.db.settings.fadeAlpha = nextA
+		updateF()
+	end)
+
 	local reset = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
 	reset:SetSize(180, 22)
-	reset:SetPoint("TOPLEFT", 16, y - 60)
+	reset:SetPoint("TOPLEFT", 16, y - 90)
 	reset:SetText("Reset ALL journal data")
 	reset:SetScript("OnClick", function()
 		StaticPopupDialogs.MJURNAL_RESET_ALL = StaticPopupDialogs.MJURNAL_RESET_ALL or {
@@ -83,6 +106,7 @@ local function build()
 	panel:SetScript("OnShow", function()
 		for _, cb in ipairs(panel.checks) do cb:SetChecked(MJ.db.settings[cb.key]) end
 		updateQ()
+		updateF()
 	end)
 
 	if Settings and Settings.RegisterCanvasLayoutCategory then

@@ -17,6 +17,13 @@ UI.state = {
 
 local function hasList(tab) return tab == TAB_MONSTERS or tab == TAB_LOOT end
 
+function UI.FadeTarget(frame)
+	local s = MJ.db.settings
+	if not s.fadeMoving or not IsPlayerMoving() then return 1 end
+	if frame:IsMouseOver() then return 1 end
+	return s.fadeAlpha or 0.35
+end
+
 ---------------------------------------------------------------------------
 -- List (left side)
 ---------------------------------------------------------------------------
@@ -337,6 +344,17 @@ function UI:Build()
 		f.Tabs[i] = tab
 	end
 	PanelTemplates_SetNumTabs(f, #TABS)
+
+	-- Fade while the player moves (like the world map), but stay fully visible under the mouse.
+	f:SetScript("OnUpdate", function(s, elapsed)
+		local target = UI.FadeTarget(s)
+		local a = s:GetAlpha()
+		if math.abs(a - target) > 0.005 then
+			s:SetAlpha(a + (target - a) * math.min(1, elapsed * 8))
+		elseif a ~= target then
+			s:SetAlpha(target)
+		end
+	end)
 
 	f:SetScript("OnShow", function()
 		if SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_OPEN then PlaySound(SOUNDKIT.IG_CHARACTER_INFO_OPEN) end
