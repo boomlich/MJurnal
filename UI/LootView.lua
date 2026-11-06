@@ -5,6 +5,51 @@ local Num, Pct, Money = MJ.Num, MJ.Pct, MJ.Money
 local Grey = UI.Grey
 local format, max = string.format, math.max
 
+-- Days shown in the auction price chart (switchable on the item page).
+local RANGES = { 30, 90 }
+local range = 30
+
+-- The auction price over time: a bar per day (lowest buyout that day) and a summary.
+local function renderAHHistory(c, itemId)
+	local vals, keys, sum = St.AHHistory(itemId, range)
+	if sum.n == 0 then return end
+	c:Section("Auction price", "lowest buyout per unit each day")
+	local x = 12
+	for _, days in ipairs(RANGES) do
+		local b = c:Button(days .. " days", x, 70, function()
+			range = days
+			UI:RenderDetail(false)
+		end)
+		if days == range then b:Disable() end
+		x = x + 76
+	end
+	c:Space(28)
+	local now = St.AHPrice(itemId)
+	local change = sum.first and sum.last and sum.first > 0 and (sum.last - sum.first) / sum.first
+	local changeText = "-"
+	if change and sum.n > 1 then
+		changeText = format("%+.0f%%", change * 100)
+		if change >= 0.05 then changeText = UI.Green(changeText) elseif change <= -0.05 then changeText = UI.Red(changeText) end
+	end
+	c:Grid({
+		{ "Now", UI.AHPriceText(itemId), UI.AH_NOTE },
+		{ "Average", sum.avg and Money(sum.avg) or "-", format("Average of the days with a price in the last %d days.", range) },
+		{ "Low / high", Money(sum.low) .. " / " .. Money(sum.high) },
+		{ "Change", changeText, "First day with a price in the range compared to the last one." },
+		{ "Days with a price", Num(sum.n) .. " / " .. range, "Days you scanned or searched for it on the auction house." },
+		{ "Vs vendor", (now and MJ.db.items[itemId] and (MJ.db.items[itemId].sell or 0) > 0) and format("%.1fx", now / MJ.db.items[itemId].sell) or "-",
+			"Auction price divided by vendor price." },
+	}, 3)
+	c:Bars(vals, 70, function(i, tt)
+		tt:SetText(St.DayLabel(keys[i]), 1, 1, 1)
+		if vals[i] > 0 then
+			tt:AddLine(Money(vals[i]) .. " each", 1, 0.82, 0)
+		else
+			tt:AddLine("No price seen that day.", 0.7, 0.7, 0.7)
+		end
+	end, St.DayLabel(keys[1]), "today", Money)
+end
+
 local function stampText(s)
 	if not s then return "-" end
 	local from = s.n and MJ:NPCName(s.n) or (s.k and (UI.GATHER_LABEL[s.k] or UI.NODE_KIND[s.k] or s.k)) or "?"
@@ -57,6 +102,8 @@ function UI.views.loot(c, itemId)
 		{ "First looted", g.first and MJ.Ago(g.first.t) or "-", g.first and stampText(g.first) },
 		{ "Last looted", g.last and MJ.Ago(g.last.t) or "-", g.last and stampText(g.last) },
 	}, 3)
+
+	renderAHHistory(c, itemId)
 
 	local questOnly = sources[1] and sources[1].questOnly
 	if questOnly then

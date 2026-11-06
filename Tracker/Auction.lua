@@ -6,7 +6,8 @@
 --                 (or automatically when you open it, see the settings).
 --   your search - the lowest price in the browse and search results you look at anyway.
 -- Prices are per realm and faction (MJ.AHKey): db.prices[key][itemID] = { p = lowest buyout
--- per unit in copper, t = when it was seen }. Only items in the journal get a price (the rest of
+-- per unit in copper, t = when it was seen, h = { [dayKey] = lowest price that day } for the
+-- last HISTORY_DAYS days }. Only items in the journal get a price (the rest of
 -- the auction house is not stored), and a full scan drops prices of items no longer in it.
 -- They are only shown next to the vendor value; every value in the journal is still calculated
 -- with vendor prices.
@@ -19,6 +20,7 @@ if not AH then
 end
 
 local SCAN_COOLDOWN = 15 * 60 -- seconds between full scans the server allows
+local HISTORY_DAYS = 90       -- days of daily prices kept per item
 local BATCH = 500             -- auctions read per frame, so a big auction house doesn't freeze the game
 
 local isOpen = false
@@ -29,6 +31,26 @@ local function store()
 	local key = MJ.AHKey()
 	MJ.db.prices[key] = MJ.db.prices[key] or {}
 	return MJ.db.prices[key]
+end
+
+-- Sets an item's current price and keeps the day's lowest price in its history.
+local function record(prices, itemID, price, now)
+	price = math.floor(price + 0.5)
+	local e = prices[itemID]
+	if not e then
+		e = {}
+		prices[itemID] = e
+	end
+	e.h = e.h or {}
+	-- a price from before the history was kept becomes its first point
+	if e.p and e.t and not next(e.h) then e.h[MJ.DayKey(e.t)] = e.p end
+	e.p, e.t = price, now
+	local dk = MJ.DayKey(now)
+	e.h[dk] = math.min(e.h[dk] or price, price)
+	local cutoff = MJ.DayKey(now - HISTORY_DAYS * 86400)
+	for k in pairs(e.h) do
+		if k < cutoff then e.h[k] = nil end
+	end
 end
 
 local function secondsUntilScan()
@@ -94,7 +116,7 @@ local function finishScan(lowest, auctions)
 	for itemID, unit in pairs(lowest) do
 		listed = listed + 1
 		if journal[itemID] then
-			prices[itemID] = { p = math.floor(unit + 0.5), t = now }
+			record(prices, itemID, unit, now)
 			found = found + 1
 		end
 	end
@@ -141,7 +163,7 @@ local function learn(itemID, price, quantity)
 	if not itemID or not price or price <= 0 or not MJ.db.items[itemID] then return false end
 	quantity = S(quantity)
 	if quantity and quantity > 1 then price = price / quantity end
-	store()[itemID] = { p = math.floor(price + 0.5), t = time() }
+	record(store(), itemID, price, time())
 	return true
 end
 

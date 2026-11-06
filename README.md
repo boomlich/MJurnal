@@ -37,6 +37,7 @@ The journal works both ways:
 ### Auction house prices
 - Next to every vendor value MJurnal can show what the loot is worth on the **auction house**: the item page (AH price, AH value of what you looted), monsters (AH value of the items, per corpse, gold + AH value per corpse), gathering sources (AH value, per loot), the overview (AH value of all loot, best farms and sources by AH value), the loot list (sort by *AH value*) and item tooltips
 - Prices are the lowest buyout per unit on your realm and faction's auction house. Press **MJurnal scan** under the auction house for a full scan (the server allows one about every 15 minutes), or turn on the automatic scan in the settings. Prices from your own searches on the auction house are picked up as you browse
+- The item page has a **price chart**: the lowest buyout each day over the last 30 or 90 days, with the current price, average, low / high, change and the price compared to the vendor price. MJurnal keeps 90 days of daily prices per item
 - Only items in your journal get a price, so the saved file stays small. An item you loot for the first time gets its price with the next scan, or when you search for it
 - Every value in the journal is still calculated with vendor prices; the auction value is shown beside it. Items without an auction price (soulbound, never listed) only have their vendor value
 

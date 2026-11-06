@@ -294,8 +294,8 @@ function Canvas:Table(cols, rows, opts)
 	self.y = self.y + 6
 end
 
--- Simple bar chart. tipFn(index, tooltip)
-function Canvas:Bars(values, height, tipFn, firstLabel, lastLabel)
+-- Simple bar chart. tipFn(index, tooltip); fmt formats the "max" label (MJ.Num by default).
+function Canvas:Bars(values, height, tipFn, firstLabel, lastLabel, fmt)
 	height = height or 70
 	local n = #values
 	if n == 0 then return end
@@ -317,7 +317,7 @@ function Canvas:Bars(values, height, tipFn, firstLabel, lastLabel)
 	local maxFs = self:FS(GameFontDisableSmall)
 	maxFs:SetPoint("TOPRIGHT", self.frame, "TOPLEFT", self.width - 12, -self.y + 12)
 	maxFs:SetJustifyH("RIGHT")
-	maxFs:SetText("max " .. MJ.Num(maxV))
+	maxFs:SetText("max " .. (fmt or MJ.Num)(maxV))
 	if firstLabel then
 		local a = self:FS(GameFontDisableSmall)
 		a:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 12, -base - 3)

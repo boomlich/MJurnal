@@ -483,6 +483,28 @@ function St.AHPrice(itemId)
 	if e then return e.p, e.t end
 end
 
+-- Daily lowest AH price over the last `days` days (oldest first, 0 where none was seen), the
+-- day keys, and a summary of the days that have a price: { low, high, avg, first, last, n }.
+function St.AHHistory(itemId, days)
+	local prices = MJ.db.prices[MJ.AHKey()]
+	local h = prices and prices[itemId] and prices[itemId].h or {}
+	local vals, keys = St.LastDays(days, function(k) return h[k] end)
+	local sum = { n = 0 }
+	local total = 0
+	for _, v in ipairs(vals) do
+		if v > 0 then
+			sum.n = sum.n + 1
+			total = total + v
+			sum.low = math.min(sum.low or v, v)
+			sum.high = math.max(sum.high or v, v)
+			sum.first = sum.first or v
+			sum.last = v
+		end
+	end
+	if sum.n > 0 then sum.avg = total / sum.n end
+	return vals, keys, sum
+end
+
 -- AH value of { [itemId] = { qty } }: the total of the priced items, priced count, item count.
 function St.AHValue(items)
 	local v, priced, total = 0, 0, 0
