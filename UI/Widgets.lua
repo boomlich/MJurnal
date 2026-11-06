@@ -335,7 +335,9 @@ end
 ---------------------------------------------------------------------------
 -- Popup menu (character and category filters)
 --   UI.ToggleMenu(anchor, build): build() returns the entries, rebuilt after every click so
---   check marks stay current. Entry: { text, checked, onClick, keepOpen, title, separator, indent }
+--   check marks stay current. Entry: { text, checked, onClick, keepOpen, title, separator, indent,
+--   toggle = { expanded, onClick } (a +/- button on the right that keeps the menu open),
+--   actions = { { text, onClick }, ... } (small text buttons in one row, keep the menu open) }
 ---------------------------------------------------------------------------
 local menu
 local ROW_H = 18
@@ -375,8 +377,53 @@ local function menuRow(i)
 			hideMenu()
 		end
 	end)
+	row.toggle = CreateFrame("Button", nil, row)
+	row.toggle:SetSize(14, 14)
+	row.toggle:SetPoint("RIGHT", -6, 0)
+	row.toggle:SetHighlightTexture("Interface\\Buttons\\UI-PlusButton-Hilight", "ADD")
+	row.toggle:SetScript("OnClick", function(self)
+		local t = self:GetParent().entry.toggle
+		t.onClick()
+		UI.FillMenu()
+	end)
+	row.actions = {}
 	menu.rows[i] = row
 	return row
+end
+
+local function actionButton(row, i)
+	local b = row.actions[i]
+	if b then return b end
+	b = CreateFrame("Button", nil, row)
+	b:SetHeight(ROW_H)
+	b.label = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	b.label:SetPoint("CENTER")
+	local hl = b:CreateTexture(nil, "HIGHLIGHT")
+	hl:SetAllPoints()
+	hl:SetColorTexture(1, 1, 1, 0.1)
+	b:SetScript("OnClick", function(self)
+		self.action.onClick()
+		UI.FillMenu()
+	end)
+	row.actions[i] = b
+	return b
+end
+
+-- Lays out an entry's action buttons from the left; returns the width they take.
+local function layoutActions(row, actions)
+	local x = 6
+	for i, a in ipairs(actions or {}) do
+		local b = actionButton(row, i)
+		b.action = a
+		b.label:SetText(a.text)
+		b:SetWidth(b.label:GetStringWidth() + 14)
+		b:ClearAllPoints()
+		b:SetPoint("LEFT", x, 0)
+		b:Show()
+		x = x + b:GetWidth() + 6
+	end
+	for i = #(actions or {}) + 1, #row.actions do row.actions[i]:Hide() end
+	return x
 end
 
 function UI.FillMenu()
@@ -389,8 +436,13 @@ function UI.FillMenu()
 		row:SetPoint("TOPLEFT", 4, -4 - (i - 1) * ROW_H)
 		row:SetPoint("RIGHT", -4, 0)
 		row.line:SetShown(e.separator == true)
-		row.text:SetShown(not e.separator)
+		row.text:SetShown(not e.separator and not e.actions)
 		row.check:SetShown(e.checked == true)
+		local actionsW = layoutActions(row, e.actions)
+		row.toggle:SetShown(e.toggle ~= nil)
+		if e.toggle then
+			row.toggle:SetNormalTexture(e.toggle.expanded and "Interface\\Buttons\\UI-MinusButton-Up" or "Interface\\Buttons\\UI-PlusButton-Up")
+		end
 		local indent = e.indent or 0
 		row.check:SetPoint("LEFT", 6 + indent, 0)
 		row.text:SetPoint("LEFT", 24 + indent, 0)
@@ -399,7 +451,7 @@ function UI.FillMenu()
 		row:EnableMouse(e.onClick ~= nil)
 		row.hl:SetShown(e.onClick ~= nil)
 		row:Show()
-		width = math.max(width, row.text:GetStringWidth() + 40 + indent)
+		width = math.max(width, row.text:GetStringWidth() + 40 + indent + (e.toggle and 20 or 0), actionsW + 4)
 	end
 	for i = #entries + 1, #menu.rows do menu.rows[i]:Hide() end
 	menu:SetSize(width, #entries * ROW_H + 8)

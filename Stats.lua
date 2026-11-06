@@ -614,7 +614,8 @@ function St.MonsterCategories(V)
 	end)
 end
 
--- Item types, each followed by its subtypes (sub = true) when it has more than one.
+-- Item types, each followed by its subtypes when it has more than one. A type with subtypes
+-- has hasSubs = true; each subtype has sub = true and parent = its item type.
 function St.ItemCategories(V)
 	V = V or St.View()
 	local subs = {} -- [item type] = { [subtype] = count }
@@ -636,7 +637,7 @@ function St.ItemCategories(V)
 		list[#list + 1] = cat
 		local children = {}
 		for name, count in pairs(cat.kind == "itype" and subs[cat.value] or {}) do
-			children[#children + 1] = { key = "isub:" .. cat.value .. ":" .. name, kind = "itype", value = name, count = count, sub = true }
+			children[#children + 1] = { key = "isub:" .. cat.value .. ":" .. name, kind = "itype", value = name, count = count, sub = true, parent = cat.value }
 		end
 		-- a single subtype covering the whole type adds nothing
 		if #children > 1 or (#children == 1 and children[1].count < cat.count) then
@@ -644,6 +645,7 @@ function St.ItemCategories(V)
 				if a.count ~= b.count then return a.count > b.count end
 				return a.value < b.value
 			end)
+			cat.hasSubs = true
 			for _, c in ipairs(children) do list[#list + 1] = c end
 		end
 	end

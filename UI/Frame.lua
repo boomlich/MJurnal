@@ -256,12 +256,21 @@ function UI.CategoryLabel(tab, key)
 	return value or key
 end
 
+-- Item types whose subtypes are shown in the loot category menu (kept between sessions).
+local function expandedTypes()
+	MJ.db.ui.lootExpanded = MJ.db.ui.lootExpanded or {}
+	return MJ.db.ui.lootExpanded
+end
+
 local function categoryMenu()
 	local tab = UI.state.tab
 	local current = UI.state.category[tab]
-	local function pick(key)
+	local expanded = expandedTypes()
+	local function pick(cat)
 		return function()
-			UI.state.category[tab] = key
+			UI.state.category[tab] = cat and cat.key
+			-- keep the picked subtype visible next time the menu opens
+			if cat and cat.parent then expanded[cat.parent] = true end
 			UI:Reload()
 		end
 	end
@@ -269,6 +278,18 @@ local function categoryMenu()
 		{ text = tab == TAB_MONSTERS and "All monsters" or "All items", checked = current == nil, onClick = pick(nil) },
 	}
 	local cats = tab == TAB_MONSTERS and St.MonsterCategories() or St.ItemCategories()
+
+	local parents = {}
+	for _, cat in ipairs(cats) do
+		if cat.hasSubs then parents[#parents + 1] = cat.value end
+	end
+	if #parents > 0 then
+		entries[#entries + 1] = { actions = {
+			{ text = "Expand all", onClick = function() for _, t in ipairs(parents) do expanded[t] = true end end },
+			{ text = "Collapse all", onClick = function() wipe(expanded) end },
+		} }
+	end
+
 	local lastKind
 	for _, cat in ipairs(cats) do
 		if cat.kind ~= lastKind then
@@ -276,12 +297,19 @@ local function categoryMenu()
 			entries[#entries + 1] = { text = CATEGORY_TITLES[cat.kind] or cat.kind, title = true }
 			lastKind = cat.kind
 		end
-		entries[#entries + 1] = {
-			-- subtypes are listed indented under their item type
-			text = (cat.sub and cat.value or UI.CategoryLabel(tab, cat.key)) .. UI.Grey("  " .. MJ.Num(cat.count)),
-			indent = cat.sub and 14 or nil,
-			checked = current == cat.key, onClick = pick(cat.key),
-		}
+		-- subtypes are listed indented under their item type, while it is expanded
+		if not cat.sub or expanded[cat.parent] then
+			local value = cat.value
+			entries[#entries + 1] = {
+				text = (cat.sub and cat.value or UI.CategoryLabel(tab, cat.key)) .. UI.Grey("  " .. MJ.Num(cat.count)),
+				indent = cat.sub and 14 or nil,
+				checked = current == cat.key, onClick = pick(cat),
+				toggle = cat.hasSubs and {
+					expanded = expanded[value] == true,
+					onClick = function() expanded[value] = not expanded[value] or nil end,
+				} or nil,
+			}
+		end
 	end
 	return entries
 end
