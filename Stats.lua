@@ -667,7 +667,7 @@ end
 
 ---------------------------------------------------------------------------
 -- Categories (the list filter next to the search box)
---   monsters: "type:<creature type>" or "class:<classification>"
+--   monsters: "type:<creature type>", "class:<classification>" or "zone:<zone it was killed in>"
 --   loot:     "itype:<item type>", "isub:<item type>:<subtype>" (Armor:Cloth, Weapon:Staves)
 --             or "quest"
 --   gathering: "gkind:<herb|mine|fishing|object|container>"
@@ -680,6 +680,7 @@ local function monsterInCategory(n, cat)
 	local kind, value = cat:match("^(%a+):(.*)$")
 	if kind == "type" then return (n.type or OTHER) == value end
 	if kind == "class" then return (n.class or "normal") == value end
+	if kind == "zone" then return n.zones[value] ~= nil end
 	return true
 end
 
@@ -721,7 +722,8 @@ function St.MonsterCategories(V)
 		local t = n.type or OTHER
 		local keys = { { "type:" .. t, "type", t } }
 		local cl = n.class or "normal"
-		if cl ~= "normal" then keys[2] = { "class:" .. cl, "class", cl } end
+		if cl ~= "normal" then keys[#keys + 1] = { "class:" .. cl, "class", cl } end
+		for zone in pairs(n.zones) do keys[#keys + 1] = { "zone:" .. zone, "zone", zone } end
 		return keys
 	end)
 end

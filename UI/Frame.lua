@@ -269,7 +269,16 @@ local function charMenu()
 	return entries
 end
 
-local CATEGORY_TITLES = { type = "Creature type", class = "Classification", itype = "Item type", quest = "Quest", gkind = "Source" }
+local CATEGORY_TITLES = {
+	type = "Creature type", class = "Classification", zone = "Zone (where it was killed)",
+	itype = "Item type", quest = "Quest", gkind = "Source",
+}
+-- Category sections that fold in and out in the menu (kept between sessions): [kind] = true when closed
+local function collapsedKinds()
+	MJ.db.ui.collapsedKinds = MJ.db.ui.collapsedKinds or {}
+	return MJ.db.ui.collapsedKinds
+end
+local FOLDING_KINDS = { zone = true }
 
 -- Button text for a category: "Beast", "Elite", "Weapon", "Cloth (Armor)", "Quest items"
 function UI.CategoryLabel(tab, key)
@@ -277,6 +286,7 @@ function UI.CategoryLabel(tab, key)
 	local kind, value = key:match("^(%a+):(.*)$")
 	if kind == "class" then value = UI.CLASS_LABEL[value] or value end
 	if kind == "gkind" then value = UI.NODE_KIND[value] or value end
+	if kind == "zone" then value = value .. " (zone)" end
 	if kind == "isub" then
 		local itype, sub = value:match("^([^:]*):(.*)$")
 		value = sub .. " (" .. itype .. ")"
@@ -327,17 +337,27 @@ local function categoryMenu()
 	end
 
 	local lastKind
+	local closed = collapsedKinds()
 	for _, cat in ipairs(cats) do
 		if cat.kind ~= lastKind then
 			entries[#entries + 1] = { separator = true }
-			entries[#entries + 1] = { text = CATEGORY_TITLES[cat.kind] or cat.kind, title = true }
-			lastKind = cat.kind
+			local kind = cat.kind
+			entries[#entries + 1] = {
+				text = CATEGORY_TITLES[kind] or kind, title = true,
+				toggle = FOLDING_KINDS[kind] and {
+					expanded = not closed[kind],
+					onClick = function() closed[kind] = not closed[kind] or nil end,
+				} or nil,
+			}
+			lastKind = kind
 		end
-		-- subtypes are listed indented under their item type, while it is expanded
-		if not cat.sub or expanded[cat.parent] then
+		-- subtypes are listed indented under their item type, while it is expanded;
+		-- a folded section (zones) lists only its current pick
+		local folded = closed[cat.kind] and current ~= cat.key
+		if not folded and (not cat.sub or expanded[cat.parent]) then
 			local value = cat.value
 			entries[#entries + 1] = {
-				text = (cat.sub and cat.value or UI.CategoryLabel(tab, cat.key)) .. UI.Grey("  " .. MJ.Num(cat.count)),
+				text = ((cat.sub or cat.kind == "zone") and cat.value or UI.CategoryLabel(tab, cat.key)) .. UI.Grey("  " .. MJ.Num(cat.count)),
 				indent = cat.sub and 14 or nil,
 				checked = current == cat.key, onClick = pick(cat),
 				toggle = cat.hasSubs and {
