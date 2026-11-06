@@ -31,16 +31,17 @@ local function periodRow(label, p, hours)
 	return { cells = cells }
 end
 
-local function sumDays(count)
+local function sumDays(V, count)
 	local r = {}
-	for _, f in ipairs({ "kills", "corpses", "money", "vendor", "xp" }) do r[f] = St.SumDays(count, f) end
+	for _, f in ipairs({ "kills", "corpses", "money", "vendor", "xp" }) do r[f] = St.SumDays(count, f, V) end
 	return r
 end
 
 function UI.views.overview(c)
-	local db = MJ.db
-	local G = St.Global()
-	local T = db.totals
+	local V = St.View()
+	local G = St.Global(V)
+	local T = V.totals
+	local npcs, days = V.npcs, V.days
 
 	c:Section("Totals")
 	c:Grid({
@@ -58,28 +59,32 @@ function UI.views.overview(c)
 		{ "Time in combat", Dur(G.ttk), "Summed engagement time of all recorded kills." },
 		{ "Damage dealt", Num(T.dmgDone or 0), "Your (and your pet's) damage to monsters, read from the built-in damage meter after each fight." },
 		{ "Damage taken", Num(T.dmgTaken or 0), "Damage monsters dealt to you, from the built-in damage meter." },
-		{ "Rares found", Num(MJ.Count(db.rares)) },
+		{ "Rares found", Num(MJ.Count(V.rares)) },
 	}, 3)
 
 	c:Section("Periods")
 	local s = MJ.session
 	local hours = max((time() - s.start) / 3600, 1 / 60)
+	-- the session is the character you are playing; only show it when that character is selected
+	local showSession = V.Includes(MJ.charKey)
+	local periods = {}
+	if showSession then periods[#periods + 1] = periodRow("This session", s, hours) end
+	periods[#periods + 1] = periodRow("Today", days[MJ.DayKey()] or {})
+	periods[#periods + 1] = periodRow("Last 7 days", sumDays(V, 7))
+	periods[#periods + 1] = periodRow("Last 30 days", sumDays(V, 30))
+	periods[#periods + 1] = periodRow("All time", T)
 	c:Table({
 		{ "Period", 110 }, { "Kills", 60, "RIGHT" }, { "Corpses", 60, "RIGHT" }, { "Gold", 100, "RIGHT" },
 		{ "Vendor", 100, "RIGHT" }, { "XP", 70, "RIGHT" }, { "Per hour", 200, "RIGHT" },
-	}, {
-		periodRow("This session", s, hours),
-		periodRow("Today", db.days[MJ.DayKey()] or {}),
-		periodRow("Last 7 days", sumDays(7)),
-		periodRow("Last 30 days", sumDays(30)),
-		periodRow("All time", T),
-	})
-	c:Text(Grey("Session started " .. MJ.Date(s.start) .. " (" .. Dur(time() - s.start) .. ")."))
+	}, periods)
+	if showSession then
+		c:Text(Grey("Session started " .. MJ.Date(s.start) .. " (" .. Dur(time() - s.start) .. ")."))
+	end
 
 	c:Section("Kills - last 30 days")
-	local vals, keys = St.LastDays(30, function(k) return db.days[k] and db.days[k].kills end)
+	local vals, keys = St.LastDays(30, function(k) return days[k] and days[k].kills end)
 	c:Bars(vals, 70, function(i, tt)
-		local d = db.days[keys[i]] or {}
+		local d = days[keys[i]] or {}
 		tt:SetText(St.DayLabel(keys[i]), 1, 1, 1)
 		tt:AddDoubleLine("Kills", Num(d.kills or 0), 0.8, 0.8, 0.8, 1, 1, 1)
 		tt:AddDoubleLine("Corpses", Num(d.corpses or 0), 0.8, 0.8, 0.8, 1, 1, 1)
@@ -87,7 +92,7 @@ function UI.views.overview(c)
 		tt:AddDoubleLine("Vendor value", Money(d.vendor or 0), 0.8, 0.8, 0.8, 1, 1, 1)
 		tt:AddDoubleLine("XP", Num(d.xp or 0), 0.8, 0.8, 0.8, 1, 1, 1)
 	end, St.DayLabel(keys[1]), "today")
-	local bestK, bestV = St.BestDay(db.days)
+	local bestK, bestV = St.BestDay(days)
 	if bestK then c:Text("Best day ever: " .. UI.Gold(Num(bestV)) .. " kills on " .. St.DayLabel(bestK) .. ".") end
 
 	-- records
@@ -95,14 +100,14 @@ function UI.views.overview(c)
 	local rows = {}
 	for i = 1, math.min(10, #G.sortedKills) do
 		local id = G.sortedKills[i]
-		local n = db.npcs[id]
+		local n = npcs[id]
 		rows[#rows + 1] = npcRow(id, { "#" .. i, UI.NPCLabel(id), Num(n.kills), Pct(n.kills / max(G.kills, 1)) })
 	end
 	c:Table({ { "#", 30 }, { "Monster", 260 }, { "Kills", 70, "RIGHT" }, { "Share", 70, "RIGHT" } }, rows, { empty = "No kills yet." })
 
 	c:Section("Best farm (value per corpse)", "min. 10 corpses")
 	rows = {}
-	for _, e in ipairs(St.Top(db.npcs, 10, function(_, n)
+	for _, e in ipairs(St.Top(npcs, 10, function(_, n)
 		if St.Corpses(n) < 10 then return nil end
 		return St.NPCValuePerCorpse(n)
 	end)) do
@@ -113,7 +118,7 @@ function UI.views.overview(c)
 
 	c:Section("Fastest kills (avg time in combat)", "min. 5 kills")
 	rows = {}
-	for _, e in ipairs(St.Top(db.npcs, 10, function(_, n)
+	for _, e in ipairs(St.Top(npcs, 10, function(_, n)
 		if (n.ttkN or 0) < 5 then return nil end
 		return n.ttkSum / n.ttkN
 	end, true)) do
@@ -123,7 +128,7 @@ function UI.views.overview(c)
 
 	c:Section("Hardest hitters", "damage taken per kill")
 	rows = {}
-	for _, e in ipairs(St.Top(db.npcs, 10, function(_, n)
+	for _, e in ipairs(St.Top(npcs, 10, function(_, n)
 		if (n.dmgKills or 0) < 3 or not n.dmgKillTaken then return nil end
 		return n.dmgKillTaken / n.dmgKills
 	end)) do
@@ -133,23 +138,23 @@ function UI.views.overview(c)
 
 	-- deaths
 	local deaths = T.deaths or 0
-	local streak = db.streak or {}
+	local streak = V.streak
 	c:Section("Deaths", deaths > 0 and ("|cffff4040" .. Num(deaths) .. " total|r") or nil)
-	local lastDeath = St.Deaths(nil, 1)[1]
+	local lastDeath = St.Deaths(nil, 1, V)[1]
 	c:Grid({
 		{ "Deaths", Num(deaths) },
 		{ "Kills per death", deaths > 0 and format("%.1f", (T.kills or 0) / deaths) or "-" },
-		{ "Deaths today", Num((db.days[MJ.DayKey()] or {}).deaths or 0) },
-		{ "Current kill streak", Num(streak.cur or 0), "Kills since your last death (any character on the account)." },
+		{ "Deaths today", Num((days[MJ.DayKey()] or {}).deaths or 0) },
+		{ "Current kill streak", Num(streak.cur or 0), MJ:CharFilter() and "Kills since the last death, per character (the highest of the selected)." or "Kills since your last death (any character on the account)." },
 		{ "Best kill streak", Num(streak.best or 0), streak.bestT and ("Reached " .. MJ.Date(streak.bestT)) or nil },
-		{ "Last 7 / 30 days", Num(St.SumDays(7, "deaths")) .. " / " .. Num(St.SumDays(30, "deaths")) },
+		{ "Last 7 / 30 days", Num(St.SumDays(7, "deaths", V)) .. " / " .. Num(St.SumDays(30, "deaths", V)) },
 		{ "Last death", lastDeath and MJ.Ago(lastDeath.t) or "-", lastDeath and function(tt) UI.DeathTooltip(tt, lastDeath) end },
 		{ "Time alive", streak.lastDeath and Dur(time() - streak.lastDeath) or "-", "Time since your last death (real time, any character)." },
-		{ "Environment deaths", Num((function() local s = 0 for _, v in pairs(db.deathEnv or {}) do s = s + v end return s end)()), "Falling, drowning, fatigue, lava..." },
+		{ "Environment deaths", Num((function() local s = 0 for _, v in pairs(V.deathEnv) do s = s + v end return s end)()), "Falling, drowning, fatigue, lava..." },
 	}, 3)
 
 	if deaths > 0 then
-		local dvals, dkeys = St.LastDays(30, function(k) return db.days[k] and db.days[k].deaths end)
+		local dvals, dkeys = St.LastDays(30, function(k) return days[k] and days[k].deaths end)
 		c:Bars(dvals, 40, function(i, tt)
 			tt:SetText(St.DayLabel(dkeys[i]), 1, 1, 1)
 			tt:AddLine(Num(dvals[i]) .. " deaths", 1, 0.3, 0.3)
@@ -157,11 +162,11 @@ function UI.views.overview(c)
 
 		c:Text(UI.Gold("Recent deaths"), GameFontNormal)
 		rows = {}
-		for _, e in ipairs(St.Deaths(nil, 10)) do
+		for _, e in ipairs(St.Deaths(nil, 10, V)) do
 			rows[#rows + 1] = {
 				cells = { MJ.Date(e.t), UI.DeathKiller(e), UI.DeathCause(e), e.adds and Num(e.adds) or "-", e.z or "-", MJ:CharName(e.c) },
 				onEnter = function(_, tt) UI.DeathTooltip(tt, e) end,
-				onClick = function() if e.npc and db.npcs[e.npc] then UI:Open(UI.TAB_MONSTERS, e.npc) end end,
+				onClick = function() if e.npc and npcs[e.npc] then UI:Open(UI.TAB_MONSTERS, e.npc) end end,
 			}
 		end
 		c:Table({ { "When", 110 }, { "Killed by", 190 }, { "Killing blow", 230 }, { "Enemies", 54, "RIGHT" }, { "Zone", 150 }, { "Character", 90 } }, rows)
@@ -169,7 +174,7 @@ function UI.views.overview(c)
 
 	c:Text(UI.Gold("Nemesis") .. UI.Grey("  ·  monsters that killed you"), GameFontNormal)
 	rows = {}
-	for _, e in ipairs(St.Top(db.npcs, 10, function(_, n) return (n.deathsTo or 0) > 0 and n.deathsTo or nil end)) do
+	for _, e in ipairs(St.Top(npcs, 10, function(_, n) return (n.deathsTo or 0) > 0 and n.deathsTo or nil end)) do
 		local n = e.e
 		rows[#rows + 1] = npcRow(e.id, {
 			UI.NPCLabel(e.id), Num(e.score), Num(n.deathAssists or 0), Num(n.kills), format("%.1f", n.kills / e.score),
@@ -182,9 +187,9 @@ function UI.views.overview(c)
 		{ "Biggest hit", 80, "RIGHT", "Biggest killing blow it dealt you." },
 	}, rows, { empty = "You haven't died yet. Nice." })
 
-	if next(db.deathZones or {}) or next(db.deathEnv or {}) then
+	if next(V.deathZones) or next(V.deathEnv) then
 		rows = {}
-		for zone, k in pairs(db.deathZones or {}) do
+		for zone, k in pairs(V.deathZones) do
 			rows[#rows + 1] = { k = k, cells = { zone, Num(k), Pct(k / max(deaths, 1)) } }
 		end
 		table.sort(rows, function(a, b) return a.k > b.k end)
@@ -193,13 +198,13 @@ function UI.views.overview(c)
 
 		-- causes: killing abilities across all monsters + environment
 		local causes = {}
-		for npcId, n in pairs(db.npcs) do
+		for npcId, n in pairs(npcs) do
 			for spellID, ds in pairs(n.deathSpells or {}) do
 				local label = (spellID == 0 and "Melee" or (ds.name or UI.SpellLabel(spellID)))
 				causes[#causes + 1] = { k = ds.c, cells = { label, UI.NPCLabel(npcId), Num(ds.c), Num(ds.max or 0) } }
 			end
 		end
-		for env, k in pairs(db.deathEnv or {}) do
+		for env, k in pairs(V.deathEnv) do
 			causes[#causes + 1] = { k = k, cells = { UI.DeathCause({ kb = { env = env } }), UI.Grey("environment"), Num(k), "-" } }
 		end
 		if #causes > 0 then
@@ -209,7 +214,7 @@ function UI.views.overview(c)
 		end
 	end
 
-	local all = St.AllDrops(20)
+	local all = St.AllDrops(20, V)
 	c:Section("Rarest drops found", "lowest rate · min. 20 corpses")
 	table.sort(all, function(a, b) return a.rate < b.rate end)
 	rows = {}
@@ -218,7 +223,7 @@ function UI.views.overview(c)
 
 	c:Section("Luckiest drops", "came sooner than expected")
 	local lucky = {}
-	for _, d in ipairs(St.AllDrops(0)) do
+	for _, d in ipairs(St.AllDrops(0, V)) do
 		local l = St.Luck(d.it)
 		if l and d.it.luckN >= 2 then
 			d.luck = l
@@ -232,7 +237,7 @@ function UI.views.overview(c)
 
 	c:Section("Most overdue", "current dry streak vs. drop rate")
 	local overdue = {}
-	for _, d in ipairs(St.AllDrops(10)) do
+	for _, d in ipairs(St.AllDrops(10, V)) do
 		if d.it.drops >= 2 then
 			local since = St.Since(d.n, d.it)
 			d.since = since
@@ -272,7 +277,7 @@ function UI.views.overview(c)
 
 	c:Section("By character")
 	rows = {}
-	for key, ch in pairs(db.chars) do
+	for key, ch in pairs(V.chars) do
 		local d = ch.deaths or 0
 		rows[#rows + 1] = { k = ch.kills or 0, cells = {
 			MJ:CharName(key), Num(ch.kills or 0), Num(ch.corpses or 0), Money(ch.money or 0), Money(ch.vendor or 0), Num(ch.xp or 0),
@@ -294,10 +299,10 @@ function UI.views.overview(c)
 	end
 	c:Table({ { "Quality", 180 }, { "Drops", 70, "RIGHT" }, { "Share", 70, "RIGHT" } }, rows)
 
-	if next(db.fishing) then
+	if next(V.fishing) then
 		c:Section("Fishing")
 		rows = {}
-		for zone, f in pairs(db.fishing) do rows[#rows + 1] = { k = f.catches, cells = { zone, Num(f.catches), Num(MJ.Count(f.items)) } } end
+		for zone, f in pairs(V.fishing) do rows[#rows + 1] = { k = f.catches, cells = { zone, Num(f.catches), Num(MJ.Count(f.items)) } } end
 		table.sort(rows, function(a, b) return a.k > b.k end)
 		c:Table({ { "Zone", 220 }, { "Catches", 70, "RIGHT" }, { "Distinct items", 100, "RIGHT" } }, rows)
 	end

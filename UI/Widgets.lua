@@ -333,6 +333,104 @@ function Canvas:Bars(values, height, tipFn, firstLabel, lastLabel)
 end
 
 ---------------------------------------------------------------------------
+-- Popup menu (character and category filters)
+--   UI.ToggleMenu(anchor, build): build() returns the entries, rebuilt after every click so
+--   check marks stay current. Entry: { text, checked, onClick, keepOpen, title, separator }
+---------------------------------------------------------------------------
+local menu
+local ROW_H = 18
+
+local function hideMenu()
+	if menu then menu:Hide() end
+end
+UI.HideMenu = hideMenu
+
+local function menuRow(i)
+	local row = menu.rows[i]
+	if row then return row end
+	row = CreateFrame("Button", nil, menu)
+	row:SetHeight(ROW_H)
+	row.check = row:CreateTexture(nil, "ARTWORK")
+	row.check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+	row.check:SetSize(14, 14)
+	row.check:SetPoint("LEFT", 6, 0)
+	row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.text:SetPoint("LEFT", 24, 0)
+	row.text:SetJustifyH("LEFT")
+	row.hl = row:CreateTexture(nil, "HIGHLIGHT")
+	row.hl:SetAllPoints()
+	row.hl:SetColorTexture(1, 1, 1, 0.1)
+	row.line = row:CreateTexture(nil, "ARTWORK")
+	row.line:SetColorTexture(1, 0.82, 0, 0.25)
+	row.line:SetHeight(1)
+	row.line:SetPoint("LEFT", 6, 0)
+	row.line:SetPoint("RIGHT", -6, 0)
+	row:SetScript("OnClick", function(self)
+		local e = self.entry
+		if not e or not e.onClick then return end
+		e.onClick()
+		if e.keepOpen and menu:IsShown() then
+			UI.FillMenu()
+		else
+			hideMenu()
+		end
+	end)
+	menu.rows[i] = row
+	return row
+end
+
+function UI.FillMenu()
+	local entries = menu.build()
+	local width = 160
+	for i, e in ipairs(entries) do
+		local row = menuRow(i)
+		row.entry = e
+		row:ClearAllPoints()
+		row:SetPoint("TOPLEFT", 4, -4 - (i - 1) * ROW_H)
+		row:SetPoint("RIGHT", -4, 0)
+		row.line:SetShown(e.separator == true)
+		row.text:SetShown(not e.separator)
+		row.check:SetShown(e.checked == true)
+		row.text:SetText(e.text or "")
+		row.text:SetFontObject(e.title and GameFontNormalSmall or GameFontHighlightSmall)
+		row:EnableMouse(e.onClick ~= nil)
+		row.hl:SetShown(e.onClick ~= nil)
+		row:Show()
+		width = math.max(width, row.text:GetStringWidth() + 40)
+	end
+	for i = #entries + 1, #menu.rows do menu.rows[i]:Hide() end
+	menu:SetSize(width, #entries * ROW_H + 8)
+end
+
+function UI.ToggleMenu(anchor, build)
+	if menu and menu:IsShown() and menu.anchor == anchor then
+		hideMenu()
+		return
+	end
+	if not menu then
+		menu = CreateFrame("Frame", "MJurnalMenu", UIParent)
+		menu:SetFrameStrata("FULLSCREEN_DIALOG")
+		menu:SetClampedToScreen(true)
+		menu:EnableMouse(true)
+		-- a 1px gold edge behind a dark background that covers all but the edge
+		local edge = menu:CreateTexture(nil, "BACKGROUND", nil, -8)
+		edge:SetPoint("TOPLEFT", -1, 1)
+		edge:SetPoint("BOTTOMRIGHT", 1, -1)
+		edge:SetColorTexture(1, 0.82, 0, 0.35)
+		local bg = menu:CreateTexture(nil, "BACKGROUND", nil, 0)
+		bg:SetAllPoints()
+		bg:SetColorTexture(0.05, 0.05, 0.05, 0.97)
+		menu.rows = {}
+		tinsert(UISpecialFrames, "MJurnalMenu")
+	end
+	menu.anchor, menu.build = anchor, build
+	menu:ClearAllPoints()
+	menu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+	UI.FillMenu()
+	menu:Show()
+end
+
+---------------------------------------------------------------------------
 -- Shared text helpers for views
 ---------------------------------------------------------------------------
 UI.CLASS_LABEL = {

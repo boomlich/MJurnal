@@ -87,8 +87,10 @@ function MJ:Fire(msg, ...)
 	end
 end
 
+-- dataVersion goes up on every write, so cached views know when to rebuild.
+MJ.dataVersion = 0
 function MJ:Changed()
-	self.globalDirty = true
+	self.dataVersion = self.dataVersion + 1
 	self:Fire("DATA_CHANGED")
 end
 
@@ -112,10 +114,31 @@ local DEFAULT_SETTINGS = {
 	debug = false,
 }
 
+---------------------------------------------------------------------------
+-- Data model (v5)
+--   db.npcs[npcId]   = identity (NPC_META fields) + ch[charKey] = that character's numbers
+--   db.items[itemId] = identity (name, link, quality, sources...) + ch[charKey] = { drops, qty, first, last, other }
+--   db.chars[charKey] = counters (COUNTERS), days, fishing, deathZones, deathEnv, streaks
+--   db.totals, db.streak = account-wide counters (milestones, launcher tooltip)
+-- Views combine the ch buckets of the characters you selected (see Stats.lua).
+---------------------------------------------------------------------------
+local DB_VERSION = 5
+
+-- Fields of an NPC entry that describe the monster itself, not what a character did to it.
+MJ.NPC_META = {
+	name = true, class = true, type = true, family = true, firstSeen = true,
+	minLvl = true, maxLvl = true, pos = true, ch = true,
+}
+-- Fields of an item entry that are per character.
+MJ.ITEM_STATS = { drops = true, qty = true, first = true, last = true, other = true }
+-- Counters kept per character, per day and for the account by MJ:Bump.
+MJ.COUNTERS = { "kills", "corpses", "money", "vendor", "xp", "deaths", "dmgDone", "dmgTaken" }
+
 function MJ:InitDB()
 	MJurnalDB = MJurnalDB or {}
 	local db = MJurnalDB
-	db.version = db.version or 1
+	-- a new journal starts at the current version; older ones always have a version
+	db.version = db.version or DB_VERSION
 	db.settings = db.settings or {}
 	for k, v in pairs(DEFAULT_SETTINGS) do
 		if db.settings[k] == nil then db.settings[k] = v end
@@ -123,17 +146,13 @@ function MJ:InitDB()
 	db.npcs = db.npcs or {}
 	db.items = db.items or {}
 	db.chars = db.chars or {}
-	db.days = db.days or {}
 	db.totals = db.totals or {}
-	db.fishing = db.fishing or {}
 	db.rares = db.rares or {}
 	db.log = db.log or {}
 	db.recent = db.recent or {}
 	db.recent.kills = db.recent.kills or {}
 	db.recent.loot = db.recent.loot or {}
 	db.ui = db.ui or {}
-	db.deathZones = db.deathZones or {}
-	db.deathEnv = db.deathEnv or {}
 	db.streak = db.streak or { cur = 0, best = 0 }
 	self.db = db
 	self:Migrate()
@@ -173,7 +192,7 @@ function MJ:Migrate()
 		end
 		for _, m in pairs(extraEvents) do
 			dec(db.totals, "deaths", m.n)
-			dec(db.days[tonumber(date("%Y%m%d", m.t))], "deaths", m.n)
+			dec(db.days and db.days[tonumber(date("%Y%m%d", m.t))], "deaths", m.n)
 			dec(db.chars[m.c], "deaths", m.n)
 		end
 		db.log = kept
@@ -198,6 +217,7 @@ function MJ:Migrate()
 	if db.version < 4 then
 		-- v4 adds per-zone death counts and first/last death per killer; rebuild them from the log
 		-- (one death per time + character, as v1-v3 logged one entry per attacker).
+		db.deathZones = db.deathZones or {}
 		local seenDeath = {}
 		for _, e in ipairs(db.log) do
 			if e.k == "death" then
@@ -217,6 +237,59 @@ function MJ:Migrate()
 		end
 		db.version = 4
 	end
+	if db.version < 5 then
+		self:MigratePerCharacter()
+		db.version = 5
+	end
+end
+
+-- The character that did most of the killing (owner of data from before v5).
+local function topCharacter(db)
+	local kills = {}
+	for _, n in pairs(db.npcs) do
+		for ck, k in pairs(n.byChar or {}) do kills[ck] = (kills[ck] or 0) + k end
+	end
+	if not next(kills) then
+		for ck, c in pairs(db.chars) do kills[ck] = c.kills or 0 end
+	end
+	local best, bestK
+	for ck, k in pairs(kills) do
+		if not bestK or k > bestK then best, bestK = ck, k end
+	end
+	return best or "?"
+end
+
+-- v5: every number is kept per character so the journal can be filtered by character.
+-- Data from before v5 was not split by character, so all of it goes to the character
+-- with the most kills.
+function MJ:MigratePerCharacter()
+	local db = self.db
+	local top = topCharacter(db)
+	for _, n in pairs(db.npcs) do
+		local s = {}
+		for k, v in pairs(n) do
+			if not MJ.NPC_META[k] then
+				s[k] = v
+				n[k] = nil
+			end
+		end
+		s.byChar = nil
+		n.ch = { [top] = s }
+	end
+	for _, g in pairs(db.items) do
+		local s = {}
+		for k in pairs(MJ.ITEM_STATS) do
+			s[k] = g[k]
+			g[k] = nil
+		end
+		s.drops, s.qty = s.drops or 0, s.qty or 0
+		g.ch = { [top] = s }
+	end
+	local c = db.chars[top] or {}
+	db.chars[top] = c
+	c.days, c.fishing, c.deathZones, c.deathEnv = db.days, db.fishing, db.deathZones, db.deathEnv
+	c.lastDeath = db.streak and db.streak.lastDeath
+	db.days, db.fishing, db.deathZones, db.deathEnv = nil, nil, nil, nil
 end
 
 -- Dedupe tables survive /reload but are only needed for a short while.
@@ -247,8 +320,9 @@ function MJ.DayKey(t)
 	return tonumber(date("%Y%m%d", t or time()))
 end
 
-function MJ:CharData()
-	local key = self.charKey or "?"
+-- The character's own table in db.chars (the current character when key is nil).
+function MJ:CharData(key)
+	key = key or self.charKey or "?"
 	local c = self.db.chars[key]
 	if not c then
 		c = {}
@@ -257,18 +331,24 @@ function MJ:CharData()
 	return c
 end
 
--- Adds to the day bucket, the character, the session and the account totals.
-function MJ:Bump(field, amount)
-	amount = amount or 1
-	local dk = self.DayKey()
-	local d = self.db.days[dk]
+-- Adds to a field of t[key] (a table of counters), creating the table when needed.
+function MJ.AddTo(t, key, field, amount)
+	local d = t[key]
 	if not d then
 		d = {}
-		self.db.days[dk] = d
+		t[key] = d
 	end
 	d[field] = (d[field] or 0) + amount
+	return d
+end
+
+-- Adds to the character, its day bucket, the session and the account totals.
+function MJ:Bump(field, amount)
+	amount = amount or 1
 	local c = self:CharData()
 	c[field] = (c[field] or 0) + amount
+	c.days = c.days or {}
+	MJ.AddTo(c.days, self.DayKey(), field, amount)
 	self.session[field] = (self.session[field] or 0) + amount
 	self.db.totals[field] = (self.db.totals[field] or 0) + amount
 end

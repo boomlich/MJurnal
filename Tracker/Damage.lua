@@ -105,10 +105,9 @@ local function readSession(sessionID, kills)
 
 	local any = false
 	for npcId, r in pairs(result) do
-		local n = MJ.db.npcs[npcId]
 		local k = kills[npcId] or 0
-		if n or k > 0 then
-			n = n or MJ:GetNPC(npcId, true)
+		if MJ.db.npcs[npcId] or k > 0 then
+			local n = MJ:NPCStats(MJ:GetNPC(npcId, true))
 			n.dmgFights = (n.dmgFights or 0) + 1
 			n.dmgDone = (n.dmgDone or 0) + r.done
 			n.dmgMine = (n.dmgMine or 0) + r.mine

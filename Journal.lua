@@ -14,18 +14,43 @@ end
 ---------------------------------------------------------------------------
 MJ.meta = MJ.meta or {}   -- session cache of what we saw on units: [npcId] = {name, class, type, family}
 
+-- The NPC entry: what the monster is (MJ.NPC_META). What each character did to it is in
+-- n.ch[charKey], see MJ:NPCStats.
 function MJ:GetNPC(npcId, create)
 	local n = self.db.npcs[npcId]
 	if not n and create then
-		n = {
-			kills = 0, looted = 0, empty = 0, money = 0, moneyCorpses = 0,
-			items = {}, byChar = {}, zones = {}, days = {}, firstSeen = time(),
-		}
+		n = { firstSeen = time(), ch = {} }
 		self.db.npcs[npcId] = n
 		self:ApplyMeta(npcId)
 		self:OnNewNPC(npcId, n)
 	end
 	return n
+end
+
+function MJ.NewNPCStats()
+	return { kills = 0, looted = 0, empty = 0, money = 0, moneyCorpses = 0, items = {}, zones = {}, days = {} }
+end
+
+-- One character's numbers for NPC entry n (the current character when ck is nil).
+function MJ:NPCStats(n, ck)
+	ck = ck or self.charKey or "?"
+	local s = n.ch[ck]
+	if not s then
+		s = MJ.NewNPCStats()
+		n.ch[ck] = s
+	end
+	return s
+end
+
+-- One character's numbers for item entry g: drops, qty, first, last, other.
+function MJ:ItemStats(g, ck)
+	ck = ck or self.charKey or "?"
+	local s = g.ch[ck]
+	if not s then
+		s = { drops = 0, qty = 0 }
+		g.ch[ck] = s
+	end
+	return s
 end
 
 function MJ:ApplyMeta(npcId)
@@ -81,23 +106,23 @@ function MJ:RecordKill(guid, npcId, info)
 	local n = self:GetNPC(npcId, true)
 	self:ApplyMeta(npcId)
 	if info.name and not n.name then n.name = info.name end
-
-	n.kills = n.kills + 1
 	local ck = self.charKey or "?"
-	n.byChar[ck] = (n.byChar[ck] or 0) + 1
+	local s = self:NPCStats(n, ck)
+
+	s.kills = s.kills + 1
 	if IsInGroup() then
-		n.groupKills = (n.groupKills or 0) + 1
+		s.groupKills = (s.groupKills or 0) + 1
 	else
-		n.soloKills = (n.soloKills or 0) + 1
+		s.soloKills = (s.soloKills or 0) + 1
 	end
 
 	-- where
 	local zone, sub = MJ.ZoneInfo()
 	if zone ~= "" then
-		local z = n.zones[zone]
+		local z = s.zones[zone]
 		if not z then
 			z = { kills = 0, sub = {} }
-			n.zones[zone] = z
+			s.zones[zone] = z
 		end
 		z.kills = z.kills + 1
 		if sub ~= "" then z.sub[sub] = (z.sub[sub] or 0) + 1 end
@@ -106,12 +131,12 @@ function MJ:RecordKill(guid, npcId, info)
 
 	-- when
 	local dk = self.DayKey(now)
-	n.days[dk] = (n.days[dk] or 0) + 1
+	s.days[dk] = (s.days[dk] or 0) + 1
 	local stamp = { t = now, c = ck, z = zone }
-	if not n.firstKill then n.firstKill = stamp end
-	n.lastKill = stamp
+	if not s.firstKill then s.firstKill = stamp end
+	s.lastKill = stamp
 
-	-- levels
+	-- levels (its level range belongs to the monster; yours is per character)
 	local lvl = info.level
 	if lvl and lvl > 0 then
 		n.minLvl = min(n.minLvl or lvl, lvl)
@@ -119,11 +144,11 @@ function MJ:RecordKill(guid, npcId, info)
 	end
 	local my = S(UnitLevel("player"))
 	if my then
-		n.myMin = min(n.myMin or my, my)
-		n.myMax = max(n.myMax or my, my)
+		s.myMin = min(s.myMin or my, my)
+		s.myMax = max(s.myMax or my, my)
 		if lvl and lvl > 0 then
-			n.diffSum = (n.diffSum or 0) + (my - lvl)
-			n.diffN = (n.diffN or 0) + 1
+			s.diffSum = (s.diffSum or 0) + (my - lvl)
+			s.diffN = (s.diffN or 0) + 1
 		end
 	end
 
@@ -131,10 +156,10 @@ function MJ:RecordKill(guid, npcId, info)
 	if info.start then
 		local d = GetTime() - info.start
 		if d >= 0 and d < 900 then
-			n.ttkSum = (n.ttkSum or 0) + d
-			n.ttkN = (n.ttkN or 0) + 1
-			n.ttkMin = min(n.ttkMin or d, d)
-			n.ttkMax = max(n.ttkMax or d, d)
+			s.ttkSum = (s.ttkSum or 0) + d
+			s.ttkN = (s.ttkN or 0) + 1
+			s.ttkMin = min(s.ttkMin or d, d)
+			s.ttkMax = max(s.ttkMax or d, d)
 		end
 	end
 
@@ -151,7 +176,7 @@ function MJ:RecordKill(guid, npcId, info)
 	if cd.streak > (cd.bestStreak or 0) then cd.bestStreak = cd.streak end
 	local sk = self.session.npcKills
 	sk[npcId] = (sk[npcId] or 0) + 1
-	if sk[npcId] > (n.bestSession or 0) then n.bestSession = sk[npcId] end
+	if sk[npcId] > (s.bestSession or 0) then s.bestSession = sk[npcId] end
 
 	local rk = { npc = npcId, guid = guid, name = n.name, t = GetTime() }
 	self.lastKill = rk
@@ -200,8 +225,9 @@ function MJ:MarkEmpty(guid, why)
 	r.s = "empty"
 	local n = self.db.npcs[r.n]
 	if n then
-		n.empty = n.empty + 1
-		r.qn = self:CountQuestCorpse(n)
+		local s = self:NPCStats(n)
+		s.empty = s.empty + 1
+		r.qn = self:CountQuestCorpse(s)
 	end
 	self:Bump("corpses")
 	self:Debug("empty corpse %s (%s)", self:NPCName(r.n), why)
@@ -215,8 +241,9 @@ function MJ:UnmarkEmpty(guid)
 	r.s = "pending"
 	local n = self.db.npcs[r.n]
 	if n then
-		n.empty = max(0, n.empty - 1)
-		self:CountQuestCorpse(n, -1, r.qn)
+		local s = self:NPCStats(n)
+		s.empty = max(0, s.empty - 1)
+		self:CountQuestCorpse(s, -1, r.qn)
 		r.qn = nil
 	end
 	self:Bump("corpses", -1)
@@ -276,34 +303,35 @@ function MJ:RecordCorpseLoot(guid, npcId, src)
 	end
 	local n = self:GetNPC(npcId, true)
 	if src.name and not n.name then n.name = src.name end
+	local s = self:NPCStats(n)
 	if r.s == "empty" then
-		n.empty = max(0, n.empty - 1)
+		s.empty = max(0, s.empty - 1)
 		self:Bump("corpses", -1)
-		self:CountQuestCorpse(n, -1, r.qn)
+		self:CountQuestCorpse(s, -1, r.qn)
 	end
 	r.s = "looted"
 
-	n.looted = n.looted + 1
+	s.looted = s.looted + 1
 	self:Bump("corpses")
-	r.qn = self:CountQuestCorpse(n)
-	local corpseIdx = n.looted + n.empty
+	r.qn = self:CountQuestCorpse(s)
+	local corpseIdx = s.looted + s.empty
 
 	local hasItems = next(src.items) ~= nil
 	local money = src.money or 0
 	if money > 0 then
-		n.money = n.money + money
-		n.moneyCorpses = n.moneyCorpses + 1
-		n.moneyMin = min(n.moneyMin or money, money)
-		n.moneyMax = max(n.moneyMax or money, money)
+		s.money = s.money + money
+		s.moneyCorpses = s.moneyCorpses + 1
+		s.moneyMin = min(s.moneyMin or money, money)
+		s.moneyMax = max(s.moneyMax or money, money)
 		self:Bump("money", money)
-		if not hasItems then n.moneyOnly = (n.moneyOnly or 0) + 1 end
+		if not hasItems then s.moneyOnly = (s.moneyOnly or 0) + 1 end
 	elseif not hasItems then
-		n.nothing = (n.nothing or 0) + 1
+		s.nothing = (s.nothing or 0) + 1
 	end
 
 	local vendor = 0
 	for itemId, e in pairs(src.items) do
-		vendor = vendor + self:RecordNPCItemDrop(n, npcId, itemId, e, corpseIdx)
+		vendor = vendor + self:RecordNPCItemDrop(s, npcId, itemId, e, corpseIdx)
 	end
 	if vendor > 0 then self:Bump("vendor", vendor) end
 	self:Debug("looted %s: %d item types, %d copper", n.name or "?", self.Count(src.items), money)
@@ -316,11 +344,12 @@ function MJ.Count(t)
 	return c
 end
 
-function MJ:RecordNPCItemDrop(n, npcId, itemId, e, corpseIdx)
-	local it = n.items[itemId]
+-- s = the character's stats for the NPC; corpseIdx = this corpse's number in s.
+function MJ:RecordNPCItemDrop(s, npcId, itemId, e, corpseIdx)
+	local it = s.items[itemId]
 	if not it then
 		it = { drops = 0, qty = 0 }
-		n.items[itemId] = it
+		s.items[itemId] = it
 	end
 	local prev = corpseIdx - 1
 	local gap = corpseIdx - (it.lastAt or 0)
@@ -355,7 +384,7 @@ function MJ:RecordNPCItemDrop(n, npcId, itemId, e, corpseIdx)
 		if name and MJ.WantedQuestItems()[name] then
 			it.qDrops = (it.qDrops or 0) + 1
 			it.qQty = (it.qQty or 0) + e.q
-			local idx = (n.qNeed and n.qNeed[name]) or 0
+			local idx = (s.qNeed and s.qNeed[name]) or 0
 			it.qDryMax = max(it.qDryMax or 0, idx - (it.qLastAt or 0) - 1)
 			it.qLastAt = idx
 		else
@@ -365,30 +394,31 @@ function MJ:RecordNPCItemDrop(n, npcId, itemId, e, corpseIdx)
 	end
 	g.src = g.src or {}
 	g.src[npcId] = true
-	self:OnItemDrop(npcId, n, itemId, it, gap, e)
+	self:OnItemDrop(npcId, s, itemId, it, gap, e)
 	return (g.sell or 0) * e.q
 end
 
--- Account-wide item entry (loot journal side).
+-- Item entry (loot journal side). Returns the entry and the current character's stats for it.
 function MJ:RecordGlobalItem(itemId, e, npcId, kind)
 	local g = self.db.items[itemId]
 	local isNew = not g
 	if not g then
-		g = { drops = 0, qty = 0 }
+		g = { ch = {} }
 		self.db.items[itemId] = g
 	end
 	if e.link and not g.link then g.link = e.link end
 	if e.quality then g.quality = e.quality end
 	if e.quest then g.quest = true end
 	self:CacheItem(itemId, e.link)
-	g.drops = g.drops + 1
-	g.qty = g.qty + e.q
+	local gs = self:ItemStats(g)
+	gs.drops = gs.drops + 1
+	gs.qty = gs.qty + e.q
 	local zone = MJ.ZoneInfo()
 	local stamp = { t = time(), c = self.charKey, n = npcId, k = kind, z = zone }
-	if not g.first then g.first = stamp end
-	g.last = stamp
+	if not gs.first then gs.first = stamp end
+	gs.last = stamp
 	if isNew then self:OnNewItem(itemId, g, npcId) end
-	return g
+	return g, gs
 end
 
 -- Skinning / herbalism / mining from corpses and pick pocketing. Kept apart from normal drops.
@@ -398,12 +428,7 @@ function MJ:RecordGather(guid, npcId, kind, src)
 	self.db.recent.loot[key] = time()
 	local n = self:GetNPC(npcId, true)
 	if src.name and not n.name then n.name = src.name end
-	n.gather = n.gather or {}
-	local gk = n.gather[kind]
-	if not gk then
-		gk = { count = 0, money = 0, items = {} }
-		n.gather[kind] = gk
-	end
+	local gk = self:GatherStats(self:NPCStats(n), kind)
 	gk.count = gk.count + 1
 	gk.money = gk.money + (src.money or 0)
 	local vendor = 0
@@ -426,14 +451,19 @@ function MJ:RecordGather(guid, npcId, kind, src)
 	self:Changed()
 end
 
-function MJ:RecordPickAttempt(npcId)
-	local n = self:GetNPC(npcId, true)
-	n.gather = n.gather or {}
-	local gk = n.gather.pick
+-- The character's gathering numbers of one kind (skin, herb, mine, pick) on an NPC.
+function MJ:GatherStats(s, kind)
+	s.gather = s.gather or {}
+	local gk = s.gather[kind]
 	if not gk then
 		gk = { count = 0, money = 0, items = {} }
-		n.gather.pick = gk
+		s.gather[kind] = gk
 	end
+	return gk
+end
+
+function MJ:RecordPickAttempt(npcId)
+	local gk = self:GatherStats(self:NPCStats(self:GetNPC(npcId, true)), "pick")
 	gk.tries = (gk.tries or 0) + 1
 end
 
@@ -443,30 +473,32 @@ function MJ:RecordOther(kind, src, zone)
 	local vendor = 0
 	local fish
 	if kind == "fishing" then
-		fish = self.db.fishing[zone]
+		local c = self:CharData()
+		c.fishing = c.fishing or {}
+		fish = c.fishing[zone]
 		if not fish then
 			fish = { catches = 0, items = {} }
-			self.db.fishing[zone] = fish
+			c.fishing[zone] = fish
 		end
 		fish.catches = fish.catches + 1
 	end
 	for itemId, e in pairs(src.items) do
-		local g = self:RecordGlobalItem(itemId, e, nil, kind)
-		g.other = g.other or {}
+		local g, gs = self:RecordGlobalItem(itemId, e, nil, kind)
+		gs.other = gs.other or {}
 		local o
 		if kind == "fishing" then
-			g.other.fishing = g.other.fishing or {}
-			o = g.other.fishing[zone]
+			gs.other.fishing = gs.other.fishing or {}
+			o = gs.other.fishing[zone]
 			if not o then
 				o = { d = 0, q = 0 }
-				g.other.fishing[zone] = o
+				gs.other.fishing[zone] = o
 			end
 			fish.items[itemId] = (fish.items[itemId] or 0) + e.q
 		else
-			o = g.other[kind]
+			o = gs.other[kind]
 			if not o then
 				o = { d = 0, q = 0 }
-				g.other[kind] = o
+				gs.other[kind] = o
 			end
 		end
 		o.d = o.d + 1
@@ -502,8 +534,9 @@ function MJ:ClaimPendingXP()
 		rk.xp = true
 		local n = self.db.npcs[rk.npc]
 		if n then
-			n.xp = (n.xp or 0) + p.xp
-			n.xpN = (n.xpN or 0) + 1
+			local s = self:NPCStats(n)
+			s.xp = (s.xp or 0) + p.xp
+			s.xpN = (s.xpN or 0) + 1
 		end
 	end
 end
@@ -527,8 +560,9 @@ function MJ:OnRepGain(faction, amount)
 	if not lk or GetTime() - lk.t > 4 then return end
 	local n = self.db.npcs[lk.npc]
 	if not n then return end
-	n.rep = n.rep or {}
-	n.rep[faction] = (n.rep[faction] or 0) + amount
+	local s = self:NPCStats(n)
+	s.rep = s.rep or {}
+	s.rep[faction] = (s.rep[faction] or 0) + amount
 end
 
 ---------------------------------------------------------------------------
@@ -553,10 +587,10 @@ function MJ.NPCIdByName(name)
 	end
 end
 
--- Adds (sign = 1) or removes (sign = -1) one death caused by npcId.
+-- Adds (sign = 1) or removes (sign = -1) one death of character D.c caused by npcId.
 local function applyKiller(self, npcId, D, sign)
 	if not npcId then return end
-	local n = self:GetNPC(npcId, true)
+	local n = self:NPCStats(self:GetNPC(npcId, true), D.c)
 	n.deathsTo = max(0, (n.deathsTo or 0) + sign)
 	if D.lvl and D.mlvl then
 		n.deathDiffSum = (n.deathDiffSum or 0) + sign * (D.lvl - D.mlvl)
@@ -571,8 +605,8 @@ local function applyKiller(self, npcId, D, sign)
 	end
 end
 
-local function applyAssist(self, npcId, sign)
-	local n = self:GetNPC(npcId, true)
+local function applyAssist(self, npcId, D, sign)
+	local n = self:NPCStats(self:GetNPC(npcId, true), D.c)
 	n.deathAssists = max(0, (n.deathAssists or 0) + sign)
 end
 
@@ -589,14 +623,18 @@ function MJ:RecordDeath(info)
 	if info.others and #info.others > 0 then D.o = info.others end
 
 	self:Bump("deaths")
-	if zone ~= "" then db.deathZones[zone] = (db.deathZones[zone] or 0) + 1 end
+	local c = self:CharData()
+	if zone ~= "" then
+		c.deathZones = c.deathZones or {}
+		c.deathZones[zone] = (c.deathZones[zone] or 0) + 1
+	end
 	db.streak.cur = 0
 	db.streak.lastDeath = D.t
-	local c = self:CharData()
 	c.streak = 0
+	c.lastDeath = D.t
 
 	applyKiller(self, D.npc, D, 1)
-	for _, id in ipairs(D.o or {}) do applyAssist(self, id, 1) end
+	for _, id in ipairs(D.o or {}) do applyAssist(self, id, D, 1) end
 
 	self:Log(D)
 	self:ScheduleDeathRecap(D)
@@ -664,7 +702,11 @@ function MJ:ScheduleDeathRecap(D)
 		-- the killing blow decides who gets the kill
 		local killer
 		if not env then killer = MJ.NPCIdByName(D.kb.src) end
-		if env then self.db.deathEnv[env] = (self.db.deathEnv[env] or 0) + 1 end
+		if env then
+			local c = self:CharData(D.c)
+			c.deathEnv = c.deathEnv or {}
+			c.deathEnv[env] = (c.deathEnv[env] or 0) + 1
+		end
 		if (killer or env) and killer ~= D.npc then
 			local old = D.npc
 			applyKiller(self, old, D, -1)
@@ -673,19 +715,19 @@ function MJ:ScheduleDeathRecap(D)
 			if old then
 				D.o = D.o or {}
 				table.insert(D.o, old)
-				applyAssist(self, old, 1)
+				applyAssist(self, old, D, 1)
 			end
 			if killer and D.o then
 				for i = #D.o, 1, -1 do
 					if D.o[i] == killer then
 						table.remove(D.o, i)
-						applyAssist(self, killer, -1)
+						applyAssist(self, killer, D, -1)
 					end
 				end
 			end
 		end
 		if D.npc then
-			local n = self.db.npcs[D.npc]
+			local n = self:NPCStats(self:GetNPC(D.npc, true), D.c)
 			n.deathSpells = n.deathSpells or {}
 			local key = D.kb.s or 0
 			local ds = n.deathSpells[key]
@@ -709,29 +751,29 @@ end
 ---------------------------------------------------------------------------
 -- Maintenance
 ---------------------------------------------------------------------------
+-- Takes one NPC's drops of an item away from character ck's stats for the item, and drops
+-- the item entry once no character has any of it left.
+local function removeDrops(self, itemId, ck, it, srcKey, npcId)
+	local g = self.db.items[itemId]
+	if not g then return end
+	if g[srcKey] then g[srcKey][npcId] = nil end
+	local gs = g.ch[ck]
+	if gs then
+		gs.drops = max(0, gs.drops - it.drops)
+		gs.qty = max(0, gs.qty - it.qty)
+		if gs.drops == 0 then g.ch[ck] = nil end
+	end
+	if not next(g.ch) then self.db.items[itemId] = nil end
+end
+
+-- Deletes the NPC for every character.
 function MJ:DeleteNPC(npcId)
 	local n = self.db.npcs[npcId]
 	if not n then return end
-	for itemId, it in pairs(n.items) do
-		local g = self.db.items[itemId]
-		if g then
-			g.drops = max(0, g.drops - it.drops)
-			g.qty = max(0, g.qty - it.qty)
-			if g.src then g.src[npcId] = nil end
-			if g.drops == 0 then self.db.items[itemId] = nil end
-		end
-	end
-	if n.gather then
-		for _, gk in pairs(n.gather) do
-			for itemId, it in pairs(gk.items) do
-				local g = self.db.items[itemId]
-				if g then
-					g.drops = max(0, g.drops - it.drops)
-					g.qty = max(0, g.qty - it.qty)
-					if g.gsrc then g.gsrc[npcId] = nil end
-					if g.drops == 0 then self.db.items[itemId] = nil end
-				end
-			end
+	for ck, s in pairs(n.ch) do
+		for itemId, it in pairs(s.items) do removeDrops(self, itemId, ck, it, "src", npcId) end
+		for _, gk in pairs(s.gather or {}) do
+			for itemId, it in pairs(gk.items) do removeDrops(self, itemId, ck, it, "gsrc", npcId) end
 		end
 	end
 	self.db.npcs[npcId] = nil

@@ -50,8 +50,9 @@ for _, event in ipairs({ "QUEST_LOG_UPDATE", "QUEST_ACCEPTED", "QUEST_REMOVED", 
 	MJ:On(event, markDirty)
 end
 
--- Counts one corpse of npc n for every quest item that is wanted right now (sign = 1),
--- or undoes such a count (sign = -1, names = what was counted). Returns the names counted.
+-- Counts one corpse for every quest item that is wanted right now (sign = 1), or undoes
+-- such a count (sign = -1, names = what was counted). n = the character's stats for the NPC.
+-- Returns the names counted.
 function MJ:CountQuestCorpse(n, sign, names)
 	if sign and sign < 0 then
 		for _, name in ipairs(names or {}) do

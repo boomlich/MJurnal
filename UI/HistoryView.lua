@@ -60,11 +60,12 @@ function UI.views.history(c)
 	c:Space(30)
 
 	local log = MJ.db.log
+	local V = MJ.Stats.View()
 	local kinds = FILTERS[filter].kinds
 	local rows, total = {}, 0
 	for i = #log, 1, -1 do
 		local e = log[i]
-		if not kinds or kinds[e.k] then
+		if (not kinds or kinds[e.k]) and V.Includes(e.c) then
 			total = total + 1
 			if #rows < limit then
 				rows[#rows + 1] = {
@@ -75,7 +76,7 @@ function UI.views.history(c)
 					onClick = function()
 						if e.item then
 							UI:Open(UI.TAB_LOOT, e.item)
-						elseif e.npc and MJ.db.npcs[e.npc] then
+						elseif e.npc and V.npcs[e.npc] then
 							UI:Open(UI.TAB_MONSTERS, e.npc)
 						end
 					end,

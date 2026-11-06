@@ -26,6 +26,7 @@ UI.state = {
 	selected = {},
 	search = { [TAB_MONSTERS] = "", [TAB_LOOT] = "" },
 	sort = { [TAB_MONSTERS] = sortIndex(TAB_MONSTERS, DEFAULT_SORT), [TAB_LOOT] = sortIndex(TAB_LOOT, DEFAULT_SORT) },
+	category = {}, -- [tab] = category key (see Stats.lua), nil = the full list
 }
 
 local function hasList(tab) return tab == TAB_MONSTERS or tab == TAB_LOOT end
@@ -95,7 +96,7 @@ end
 local function MonsterElements()
 	local sortKey = currentSortKey(TAB_MONSTERS)
 	local out = {}
-	for _, e in ipairs(St.MonsterList(UI.state.search[TAB_MONSTERS], sortKey)) do
+	for _, e in ipairs(St.MonsterList(UI.state.search[TAB_MONSTERS], sortKey, UI.state.category[TAB_MONSTERS])) do
 		local count
 		if sortKey == "value" then
 			count = MJ.Money(e.v)
@@ -120,7 +121,7 @@ end
 local function LootElements()
 	local sortKey = currentSortKey(TAB_LOOT)
 	local out = {}
-	for _, e in ipairs(St.ItemList(UI.state.search[TAB_LOOT], sortKey)) do
+	for _, e in ipairs(St.ItemList(UI.state.search[TAB_LOOT], sortKey, UI.state.category[TAB_LOOT])) do
 		local count
 		if sortKey == "value" then
 			count = MJ.Money(e.v)
@@ -149,7 +150,32 @@ function UI:RefreshList(keepScroll)
 	end
 	local sorts = sortsFor(self.state.tab)
 	self.sortButton:SetText("Sort: " .. sorts[self.state.sort[self.state.tab]].label)
+	self.categoryButton:SetText(UI.CategoryLabel(self.state.tab, self.state.category[self.state.tab]))
 	self.countText:SetText(MJ.Num(#elements) .. (self.state.tab == TAB_MONSTERS and " monsters" or " items"))
+end
+
+-- Keeps the selection on a row that is still in the list (after a filter changed it).
+function UI:EnsureSelection()
+	local tab = self.state.tab
+	if not hasList(tab) or not self.listElements then return end
+	local sel = self.state.selected[tab]
+	for _, e in ipairs(self.listElements) do
+		if e.id == sel then return end
+	end
+	self.state.selected[tab] = self.listElements[1] and self.listElements[1].id or nil
+	local id = self.state.selected[tab]
+	self.scrollBox:ForEachFrame(function(btn)
+		if btn.sel and btn.data then btn.sel:SetShown(btn.data.id == id) end
+	end)
+end
+
+-- Rebuilds the list and the detail after the character filter or the category changed.
+function UI:Reload()
+	if not self.frame or not self.frame:IsShown() then return end
+	self:RefreshList()
+	self:EnsureSelection()
+	self:UpdateHeader()
+	self:RenderDetail(true)
 end
 
 function UI:CycleSort()
@@ -157,6 +183,108 @@ function UI:CycleSort()
 	local sorts = sortsFor(tab)
 	self.state.sort[tab] = self.state.sort[tab] % #sorts + 1
 	self:RefreshList()
+end
+
+---------------------------------------------------------------------------
+-- Filters: characters (all tabs) and category (list tabs)
+---------------------------------------------------------------------------
+-- "All characters" / "Thrall" / "3 characters"
+function UI.CharFilterLabel()
+	local filter = MJ:CharFilter()
+	if not filter then return "All characters" end
+	local keys = {}
+	for ck in pairs(filter) do keys[#keys + 1] = ck end
+	if #keys == 1 then return MJ:CharName(keys[1]) end
+	return #keys .. " characters"
+end
+
+local function setChar(ck, on)
+	local filter = MJ:CharFilter()
+	local set = {}
+	if filter then
+		for k in pairs(filter) do set[k] = true end
+	end
+	set[ck] = on or nil
+	-- every character selected is the same as no filter
+	local all = true
+	for k in pairs(MJ.db.chars) do
+		if not set[k] then all = false end
+	end
+	MJ:SetCharFilter((not all) and set or nil)
+end
+
+local function charMenu()
+	local filter = MJ:CharFilter()
+	local entries = {
+		{ text = "All characters", checked = filter == nil, keepOpen = true, onClick = function() MJ:SetCharFilter(nil) end },
+		{ separator = true },
+	}
+	local chars = {}
+	for ck, c in pairs(MJ.db.chars) do chars[#chars + 1] = { ck = ck, kills = c.kills or 0 } end
+	table.sort(chars, function(a, b)
+		if a.kills ~= b.kills then return a.kills > b.kills end
+		return a.ck < b.ck
+	end)
+	for _, ch in ipairs(chars) do
+		local ck = ch.ck
+		local on = filter ~= nil and filter[ck] == true
+		local you = ck == MJ.charKey and UI.Grey(" (you)") or ""
+		entries[#entries + 1] = {
+			text = MJ:CharName(ck) .. you .. UI.Grey("  " .. MJ.Num(ch.kills) .. " kills"),
+			checked = on, keepOpen = true,
+			-- from "All", a click shows only that character; after that, clicks add or remove
+			onClick = function()
+				if filter == nil then MJ:SetCharFilter({ [ck] = true }) else setChar(ck, not on) end
+			end,
+		}
+	end
+	return entries
+end
+
+local CATEGORY_TITLES = { type = "Creature type", class = "Classification", itype = "Item type", quest = "Quest" }
+
+function UI.CategoryLabel(tab, key)
+	if not key then return "Category: All" end
+	local kind, value = key:match("^(%a+):(.*)$")
+	if kind == "class" then value = UI.CLASS_LABEL[value] or value end
+	if key == "quest" then value = "Quest items" end
+	return value or key
+end
+
+local function categoryMenu()
+	local tab = UI.state.tab
+	local current = UI.state.category[tab]
+	local function pick(key)
+		return function()
+			UI.state.category[tab] = key
+			UI:Reload()
+		end
+	end
+	local entries = {
+		{ text = tab == TAB_MONSTERS and "All monsters" or "All items", checked = current == nil, onClick = pick(nil) },
+	}
+	local cats = tab == TAB_MONSTERS and St.MonsterCategories() or St.ItemCategories()
+	local lastKind
+	for _, cat in ipairs(cats) do
+		if cat.kind ~= lastKind then
+			entries[#entries + 1] = { separator = true }
+			entries[#entries + 1] = { text = CATEGORY_TITLES[cat.kind] or cat.kind, title = true }
+			lastKind = cat.kind
+		end
+		entries[#entries + 1] = {
+			text = UI.CategoryLabel(tab, cat.key) .. UI.Grey("  " .. MJ.Num(cat.count)),
+			checked = current == cat.key, onClick = pick(cat.key),
+		}
+	end
+	return entries
+end
+
+function UI:UpdateHeader()
+	if not self.frame then return end
+	self.charButton:SetText(UI.CharFilterLabel())
+	local who = MJ:CharFilter() and UI.CharFilterLabel() or "the whole account"
+	self.headerText:SetText(self.state.tab == TAB_OVERVIEW and ("Totals, records and trends for " .. who)
+		or "Notable drops, milestones, rares and deaths - newest first")
 end
 
 ---------------------------------------------------------------------------
@@ -199,14 +327,15 @@ function UI:SelectTab(tab)
 	self.state.tab = tab
 	local f = self.frame
 	PanelTemplates_SetTab(f, tab)
+	UI.HideMenu()
 	local list = hasList(tab)
 	self.listPanel:SetShown(list)
 	self.search:SetShown(list)
 	self.sortButton:SetShown(list)
+	self.categoryButton:SetShown(list)
 	self.countText:SetShown(list)
 	self.headerText:SetShown(not list)
-	self.headerText:SetText(tab == TAB_OVERVIEW and "Account-wide totals, records and trends"
-		or "Notable drops, milestones, rares and deaths - newest first")
+	self:UpdateHeader()
 	self.detailPanel:ClearAllPoints()
 	if list then
 		self.detailPanel:SetPoint("TOPLEFT", self.listPanel, "TOPRIGHT", 6, 0)
@@ -217,13 +346,7 @@ function UI:SelectTab(tab)
 	if list then
 		self.search:SetText(self.state.search[tab] or "")
 		self:RefreshList()
-		if not self.state.selected[tab] and self.listElements and self.listElements[1] then
-			self.state.selected[tab] = self.listElements[1].id
-			local id = self.state.selected[tab]
-			self.scrollBox:ForEachFrame(function(btn)
-				if btn.sel and btn.data then btn.sel:SetShown(btn.data.id == id) end
-			end)
-		end
+		self:EnsureSelection()
 	end
 	self:RenderDetail(true)
 end
@@ -299,6 +422,12 @@ function UI:Build()
 	sortButton:SetScript("OnClick", function() UI:CycleSort() end)
 	self.sortButton = sortButton
 
+	local categoryButton = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+	categoryButton:SetSize(150, 22)
+	categoryButton:SetPoint("LEFT", sortButton, "RIGHT", 6, 0)
+	categoryButton:SetScript("OnClick", function(b) UI.ToggleMenu(b, categoryMenu) end)
+	self.categoryButton = categoryButton
+
 	local countText = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 	countText:SetPoint("TOPLEFT", list, "BOTTOMLEFT", 6, -6)
 	self.countText = countText
@@ -346,6 +475,21 @@ function UI:Build()
 	end)
 	gear:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+	-- character filter (every tab)
+	local charButton = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+	charButton:SetSize(180, 22)
+	charButton:SetPoint("RIGHT", gear, "LEFT", -8, 0)
+	charButton:SetScript("OnClick", function(b) UI.ToggleMenu(b, charMenu) end)
+	charButton:SetScript("OnEnter", function(b)
+		GameTooltip:SetOwner(b, "ANCHOR_BOTTOM")
+		GameTooltip:SetText("Characters")
+		GameTooltip:AddLine("Show the journal for every character, one character or a few of them.", 1, 1, 1, true)
+		GameTooltip:Show()
+	end)
+	charButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	self.charButton = charButton
+	MJ:Listen("FILTER_CHANGED", function() UI:Reload() end)
+
 	-- tabs
 	f.Tabs = {}
 	for i, name in ipairs(TABS) do
@@ -382,6 +526,7 @@ function UI:Build()
 		UI:SelectTab(UI.state.tab)
 	end)
 	f:SetScript("OnHide", function()
+		UI.HideMenu()
 		if SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_CLOSE then PlaySound(SOUNDKIT.IG_CHARACTER_INFO_CLOSE) end
 	end)
 
@@ -418,6 +563,7 @@ function UI:Open(tab, id)
 	if id and hasList(tab) then
 		-- make sure the entry is visible in the list
 		self.state.search[tab] = ""
+		self.state.category[tab] = nil
 	end
 	if id then self.state.selected[tab] = id end
 	self.state.tab = tab
@@ -435,7 +581,8 @@ function UI:Search(tab, text)
 	if not MJ.db then return end
 	self:Build()
 	text = text or ""
-	-- select the first row as the list will show it, in the current sort order
+	-- a search looks through the full list; select the first row in the current sort order
+	self.state.category[TAB_MONSTERS], self.state.category[TAB_LOOT] = nil, nil
 	local list = tab == TAB_MONSTERS and St.MonsterList(text, currentSortKey(TAB_MONSTERS)) or St.ItemList(text, currentSortKey(TAB_LOOT))
 	if tab == TAB_MONSTERS and #list == 0 then
 		-- no monster matches: fall back to the loot journal

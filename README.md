@@ -41,6 +41,10 @@ The journal works both ways:
 - Breakdowns by creature type, classification, zone, character and item quality
 - History log of notable drops, milestones, rares spotted or killed, and deaths
 
+### Characters & categories
+- **Character filter** (top right of the journal): show every character, one character or any mix of them. Lists, monster and item pages, the overview and the history all follow it; tooltips and chat alerts always use the whole account.
+- **Categories** next to the search box: monsters by creature type (Beast, Humanoid...) or classification (Elite, Rare...), loot by item type (Weapon, Trade Goods...) or quest items. "All" shows the full list as before.
+
 ### Convenience
 - Search and sorting in both journals, with click-through between monsters and items
 - **Key binding** to open the journal on the NPC under your mouse
@@ -122,6 +126,8 @@ World of Warcraft\_forever_\WTF\Account\<ACCOUNT>\SavedVariables\MJurnal.lua
 - The game writes the file on logout and `/reload`, so a crash loses data back to the last save.
 - The file is plain Lua text. Copy it to back up your journal.
 - Only raw counts are stored. Rates and probabilities are calculated when you open the journal.
+- Every number is stored per character, so the journal can be filtered by character. When several characters are combined, counts are added up; "corpses since the last drop" uses the character that saw the item most recently.
+- Journals from before per-character data (v0.1) are converted on the first load: all older numbers go to the character with the most kills.
 - The file grows mainly with the number of different monsters and items, not with the number of kills. Per-monster daily kill counts add a little per day played, and the history log keeps the latest ~5000 events.
 
 ## Project layout

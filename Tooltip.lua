@@ -1,4 +1,4 @@
--- Tooltip.lua: a short MJurnal line on NPC and item tooltips.
+-- Tooltip.lua: a short MJurnal line on NPC and item tooltips (always the whole account).
 local _, MJ = ...
 local St = MJ.Stats
 local format = string.format
@@ -6,7 +6,7 @@ local format = string.format
 local function npcLine(tooltip, guid)
 	if not guid or MJ.issecret(guid) then return end
 	local npcId = MJ.ParseGUID(guid)
-	local n = npcId and MJ.db.npcs[npcId]
+	local n = npcId and St.AccountView().npcs[npcId]
 	if not n then return end
 	local corpses = St.Corpses(n)
 	local text = format("Killed %s · Looted %s", MJ.Num(n.kills), MJ.Num(n.looted))
@@ -16,10 +16,11 @@ local function npcLine(tooltip, guid)
 end
 
 local function itemLine(tooltip, itemId)
-	local g = itemId and MJ.db.items[itemId]
+	local V = St.AccountView()
+	local g = itemId and V.items[itemId]
 	if not g then return end
 	local text = format("Looted %sx", MJ.Num(g.drops))
-	local best = St.ItemSources(itemId)[1]
+	local best = St.ItemSources(itemId, V)[1]
 	if best then text = text .. format(" · best: %s (%s)", MJ:NPCName(best.npc), MJ.Pct(best.rate)) end
 	tooltip:AddLine("|cffd4a017MJurnal:|r " .. text, 1, 1, 1)
 end

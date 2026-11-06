@@ -30,7 +30,7 @@ local SORT_GETTERS = {
 
 local function confirmDelete(npcId)
 	StaticPopupDialogs.MJURNAL_DELETE_NPC = StaticPopupDialogs.MJURNAL_DELETE_NPC or {
-		text = "Delete the journal entry for %s?\n\nIts kills, loot and stats are removed. Account totals, daily counts and the history log keep counting it.",
+		text = "Delete the journal entry for %s?\n\nIts kills, loot and stats are removed for every character. Character totals, daily counts and the history log keep counting it.",
 		button1 = YES or "Yes",
 		button2 = NO or "No",
 		OnAccept = function(_, data)
@@ -233,7 +233,7 @@ local function renderDeaths(c, npcId, n)
 	local rank
 	if deaths > 0 then
 		rank = 1
-		for _, other in pairs(MJ.db.npcs) do
+		for _, other in pairs(St.View().npcs) do
 			if (other.deathsTo or 0) > deaths then rank = rank + 1 end
 		end
 	end
@@ -244,7 +244,7 @@ local function renderDeaths(c, npcId, n)
 		{ "Nemesis rank", rank and ("#" .. rank) or "-", "Your deadliest monsters, ranked by killing blows." },
 		{ "Kills per death", deaths > 0 and format("%.1f", n.kills / deaths) or "-" },
 		{ "Fights lost", encounters > 0 and Pct(deaths / encounters) or "-", "Deaths / (kills + deaths)." },
-		{ "Share of your deaths", (MJ.db.totals.deaths or 0) > 0 and Pct(deaths / MJ.db.totals.deaths) or "-" },
+		{ "Share of your deaths", (St.View().totals.deaths or 0) > 0 and Pct(deaths / St.View().totals.deaths) or "-" },
 		{ "Biggest killing blow", n.kbMax and Num(n.kbMax) or "-" },
 		{ "Avg level difference", (n.deathDiffN or 0) > 0 and format("%+.1f", n.deathDiffSum / n.deathDiffN) or "-", "Your level minus its level when it killed you." },
 		{ "Avg enemies on you", deaths > 0 and n.deathAddsSum and format("%.1f", n.deathAddsSum / deaths) or "-", "How many enemies were attacking you when you died." },
@@ -337,11 +337,18 @@ local function renderLocation(c, n)
 end
 
 function UI.views.monster(c, npcId)
-	local db = MJ.db
-	local n = npcId and db.npcs[npcId]
+	local V = St.View()
+	local n = npcId and V.npcs[npcId]
+	if not n and npcId and MJ.db.npcs[npcId] then
+		c:Title(UI.NPCLabel(npcId), UI.CharFilterLabel())
+		c:Text("None of the selected characters has killed or looted this monster. Pick other characters in the character filter (top right) to see it.")
+		return
+	end
 	if not n then
 		c:Title("Monster journal", "Select a monster from the list.")
-		if not next(db.npcs) then
+		if MJ:CharFilter() and not next(V.npcs) then
+			c:Text("None of the selected characters has killed anything yet.")
+		elseif not next(V.npcs) then
 			c:Text("Your journal is empty. Kill and loot something - every monster you kill (while you or your group has the tag) and every corpse you loot is recorded here.\n\nTip: bind 'Open journal for mouseover NPC' under Key Bindings > AddOns to jump straight to the monster under your mouse.")
 		end
 		return

@@ -16,10 +16,18 @@ local function stampText(s)
 end
 
 function UI.views.loot(c, itemId)
-	local g = itemId and MJ.db.items[itemId]
+	local V = St.View()
+	local g = itemId and V.items[itemId]
+	if not g and itemId and MJ.db.items[itemId] then
+		c:Title(MJ:ItemText(itemId), UI.CharFilterLabel(), MJ:ItemIcon(itemId), function(_, tt) tt:SetItemByID(itemId) end)
+		c:Text("None of the selected characters has looted this item. Pick other characters in the character filter (top right) to see it.")
+		return
+	end
 	if not g then
 		c:Title("Loot journal", "Select an item from the list.")
-		if not next(MJ.db.items) then c:Text("Nothing looted yet.") end
+		if not next(V.items) then
+			c:Text(MJ:CharFilter() and "The selected characters have not looted anything yet." or "Nothing looted yet.")
+		end
 		return
 	end
 	MJ:CacheItem(itemId)
@@ -116,7 +124,7 @@ function UI.views.loot(c, itemId)
 			c:Section("Fishing")
 			local frows = {}
 			for zone, o in pairs(other.fishing) do
-				local f = MJ.db.fishing[zone]
+				local f = V.fishing[zone]
 				local catches = f and f.catches or 0
 				local p = catches > 0 and o.d / catches or nil
 				frows[#frows + 1] = { k = o.d, cells = { zone, Num(o.d), Num(o.q), Num(catches), UI.RateText(p, catches), UI.OneIn(p) } }

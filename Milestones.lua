@@ -27,12 +27,14 @@ function MJ:Log(e)
 	self:Fire("LOG_ADDED", e)
 end
 
+-- n = the NPC entry; milestones count kills by every character on the account.
 function MJ:CheckKillMilestones(npcId, n)
 	local s = self.db.settings
-	if isIn(NPC_MILESTONES, n.kills) then
-		self:Log({ k = "ms", npc = npcId, v = n.kills })
+	local kills = St.NPCKills(n)
+	if isIn(NPC_MILESTONES, kills) then
+		self:Log({ k = "ms", npc = npcId, v = kills })
 		if s.milestones then
-			self:Print(format("Milestone! |cffffffff%s|r kills of |cffffd200%s|r.", MJ.Num(n.kills), self:NPCName(npcId)))
+			self:Print(format("Milestone! |cffffffff%s|r kills of |cffffd200%s|r.", MJ.Num(kills), self:NPCName(npcId)))
 		end
 	end
 	local total = self.db.totals.kills or 0
@@ -67,6 +69,7 @@ function MJ:OnRareSeen(npcId, m)
 	end
 end
 
+-- n = the current character's stats for the NPC (its own corpses and drop rate).
 function MJ:OnItemDrop(npcId, n, itemId, it, gap, e)
 	local s = self.db.settings
 	local g = self.db.items[itemId]
