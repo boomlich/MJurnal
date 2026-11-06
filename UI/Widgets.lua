@@ -493,6 +493,17 @@ UI.CLASS_LABEL = {
 	worldboss = "Boss", trivial = "Trivial", minus = "Minion",
 }
 
+-- Gathering sources (see MJ:RecordNode)
+UI.NODE_KIND = {
+	herb = "Herbalism", mine = "Mining", fishing = "Fishing", object = "Chests & objects", container = "Containers",
+}
+local NODE_ICON = {
+	herb = "Interface\\Icons\\Trade_Herbalism", mine = "Interface\\Icons\\Trade_Mining",
+	fishing = "Interface\\Icons\\Trade_Fishing", object = "Interface\\Icons\\INV_Box_01",
+	container = "Interface\\Icons\\INV_Misc_Bag_10",
+}
+function UI.NodeIcon(kind) return NODE_ICON[kind] or 134400 end
+
 function UI.Grey(text) return "|cff808080" .. tostring(text) .. "|r" end
 function UI.Gold(text) return "|cffffd200" .. tostring(text) .. "|r" end
 function UI.Green(text) return "|cff20ff20" .. tostring(text) .. "|r" end

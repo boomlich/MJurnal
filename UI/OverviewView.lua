@@ -299,12 +299,49 @@ function UI.views.overview(c)
 	end
 	c:Table({ { "Quality", 180 }, { "Drops", 70, "RIGHT" }, { "Share", 70, "RIGHT" } }, rows)
 
-	if next(V.fishing) then
-		c:Section("Fishing")
+	if next(V.nodes) then
+		-- herbs, ore, chests, containers and fishing; the Gathering tab has each source
+		c:Section("Gathering", "click a type or source to open it")
+		local byKind = {}
+		for _, nd in pairs(V.nodes) do
+			local b = byKind[nd.kind] or { count = 0, sources = 0, qty = 0, value = 0 }
+			byKind[nd.kind] = b
+			b.count = b.count + (nd.count or 0)
+			b.sources = b.sources + 1
+			for _, it in pairs(nd.items) do b.qty = b.qty + it.qty end
+			b.value = b.value + nd.money + St.NodeVendor(nd)
+		end
 		rows = {}
-		for zone, f in pairs(V.fishing) do rows[#rows + 1] = { k = f.catches, cells = { zone, Num(f.catches), Num(MJ.Count(f.items)) } } end
+		for kind, b in pairs(byKind) do
+			rows[#rows + 1] = {
+				k = b.count,
+				cells = { UI.NODE_KIND[kind] or kind, Num(b.count), Num(b.sources), Num(b.qty), Money(b.value) },
+				onClick = function()
+					UI.state.category[UI.TAB_GATHER] = "gkind:" .. kind
+					UI:Open(UI.TAB_GATHER)
+				end,
+			}
+		end
 		table.sort(rows, function(a, b) return a.k > b.k end)
-		c:Table({ { "Zone", 220 }, { "Catches", 70, "RIGHT" }, { "Distinct items", 100, "RIGHT" } }, rows)
+		c:Table({
+			{ "Type", 180 }, { "Times", 70, "RIGHT" }, { "Sources", 70, "RIGHT" }, { "Items (qty)", 90, "RIGHT" },
+			{ "Total value", 110, "RIGHT", "Money + vendor value of everything it gave." },
+		}, rows)
+
+		rows = {}
+		for _, e in ipairs(St.Top(V.nodes, 10, function(_, nd)
+			if (nd.count or 0) < 5 then return nil end
+			return St.NodeValuePer(nd)
+		end)) do
+			local nd = e.e
+			rows[#rows + 1] = {
+				icon = UI.NodeIcon(nd.kind),
+				cells = { nd.name, UI.NODE_KIND[nd.kind] or nd.kind, Money(e.score), Num(nd.count) },
+				onClick = function() UI:Open(UI.TAB_GATHER, e.id) end,
+			}
+		end
+		c:Text(UI.Gold("Best sources") .. Grey("  ·  value per loot, min. 5 loots"), GameFontNormal)
+		c:Table({ { "Source", 220 }, { "Type", 130 }, { "Value/loot", 100, "RIGHT" }, { "Times", 70, "RIGHT" } }, rows, { empty = "Not enough data yet." })
 	end
 end
 

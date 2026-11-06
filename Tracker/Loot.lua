@@ -1,4 +1,5 @@
--- Tracker/Loot.lua: reads the loot window and attributes every slot to its source corpse.
+-- Tracker/Loot.lua: reads the loot window and attributes every slot to its source: a corpse,
+-- or a gathering source (herb / mining node, chest or other object, container, fishing).
 local _, MJ = ...
 local S, issecret, ParseGUID = MJ.S, MJ.issecret, MJ.ParseGUID
 local GetTime = GetTime
@@ -37,13 +38,19 @@ end
 -- gather that gave no (or unreadable) loot can't relabel the next normal corpse.
 local lastGather    -- { kind, t }
 local consumedAt = 0 -- GetTime() of the last loot window that consumed a gather
+-- What your last spell was cast on ("Copper Vein", "Peacebloom", "Battered Chest"): objects
+-- have no name in their GUID, so this names the node you loot right after.
+local lastTarget    -- { name, t }
 
 local function playerSpell(unit, spellID)
 	if issecret(unit) or unit ~= "player" then return nil end
 	return GatherKind(S(spellID))
 end
 
-MJ:On("UNIT_SPELLCAST_SENT", function(unit, _, _, spellID)
+MJ:On("UNIT_SPELLCAST_SENT", function(unit, target, _, spellID)
+	if issecret(unit) or unit ~= "player" then return end
+	target = S(target)
+	if type(target) == "string" and target ~= "" then lastTarget = { name = target, t = GetTime() } end
 	local kind = playerSpell(unit, spellID)
 	if kind then lastGather = { kind = kind, t = GetTime() } end
 end)
@@ -100,6 +107,24 @@ local function openedCorpse()
 			if npcId then return guid, npcId end
 		end
 	end
+end
+
+-- The name of the object you just cast on (opened, gathered), used once.
+local function takeTargetName()
+	local t = lastTarget
+	lastTarget = nil
+	if t and GetTime() - t.t < 10 then return t.name end
+end
+
+-- Key and name of an opened container item ("Item-..." GUID).
+local function containerSource(guid)
+	local id
+	if C_Item and C_Item.GetItemIDByGUID then
+		local ok, v = pcall(C_Item.GetItemIDByGUID, guid)
+		id = ok and S(v) or nil
+	end
+	if not id then return "container", "Containers" end
+	return "container:" .. id, MJ.ItemInfo(id) or ("Container #" .. id)
 end
 
 local function addItem(s, itemId, qty, slot)
@@ -200,7 +225,8 @@ local function OnLoot()
 				if m then m.q = m.q + e.q else merged.items[id] = e end
 			end
 		end
-		MJ:RecordOther("fishing", merged, zone)
+		local where = zone ~= "" and zone or "Unknown"
+		MJ:RecordNode("fishing", "fishing:" .. where, where, merged, zone)
 		return
 	end
 
@@ -215,12 +241,15 @@ local function OnLoot()
 				MJ:RecordCorpseLoot(guid, npcId, s)
 			end
 		elseif kind == "Item" then
-			MJ:RecordOther("container", s, zone)
+			local key, name = containerSource(guid)
+			MJ:RecordNode("container", key, name, s, zone)
 		elseif kind == "GameObject" then
 			if not MJ.db.recent.loot[guid] then
 				MJ.db.recent.loot[guid] = time()
 				local okind = (gather == "herb" or gather == "mine") and gather or "object"
-				MJ:RecordOther(okind, s, zone)
+				local id = MJ.ObjectID(guid)
+				local name = takeTargetName() or (id and ("Object #" .. id)) or "Object"
+				MJ:RecordNode(okind, "go:" .. (id or "?"), name, s, zone)
 			end
 		end
 	end

@@ -6,7 +6,7 @@ MJ.UI = {}
 MJ.Stats = {}
 
 -- Journal tabs (also the index of each view in MJ.UI.views)
-MJ.UI.TAB_OVERVIEW, MJ.UI.TAB_MONSTERS, MJ.UI.TAB_LOOT, MJ.UI.TAB_HISTORY = 1, 2, 3, 4
+MJ.UI.TAB_OVERVIEW, MJ.UI.TAB_MONSTERS, MJ.UI.TAB_LOOT, MJ.UI.TAB_GATHER, MJ.UI.TAB_HISTORY = 1, 2, 3, 4, 5
 
 local floor, format, tonumber, type = math.floor, string.format, tonumber, type
 
@@ -42,6 +42,13 @@ function MJ.ParseGUID(guid)
 		return tonumber(id), kind
 	end
 	return nil, kind
+end
+
+-- GameObject-0-[server]-[instance]-[zone]-[objectID]-[spawnUID]: herb and mining nodes, chests...
+function MJ.ObjectID(guid)
+	if type(guid) ~= "string" then return nil end
+	local kind, _, _, _, _, id = strsplit("-", guid)
+	if kind == "GameObject" then return tonumber(id) end
 end
 
 function MJ.UnitNPC(unit)
@@ -117,19 +124,21 @@ local DEFAULT_SETTINGS = {
 ---------------------------------------------------------------------------
 -- Data model (v5)
 --   db.npcs[npcId]   = identity (NPC_META fields) + ch[charKey] = that character's numbers
---   db.items[itemId] = identity (name, link, quality, sources...) + ch[charKey] = { drops, qty, first, last, other }
---   db.chars[charKey] = counters (COUNTERS), days, fishing, deathZones, deathEnv, streaks
+--   db.items[itemId] = identity (name, link, quality, sources...) + ch[charKey] = { drops, qty, first, last }
+--   db.chars[charKey] = counters (COUNTERS), days, deathZones, deathEnv, streaks and
+--                       nodes[key] = loot from one gathering source (see MJ:RecordNode)
+--   db.nodeNames[key] = the name of a gathering source
 --   db.totals, db.streak = account-wide counters (milestones, launcher tooltip)
 -- Views combine the ch buckets of the characters you selected (see Stats.lua).
 ---------------------------------------------------------------------------
-local DB_VERSION = 5
+local DB_VERSION = 6
 
 -- Fields of an NPC entry that describe the monster itself, not what a character did to it.
 MJ.NPC_META = {
 	name = true, class = true, type = true, family = true, firstSeen = true,
 	minLvl = true, maxLvl = true, pos = true, ch = true,
 }
--- Fields of an item entry that are per character.
+-- Fields of an item entry that are per character (other: only before v6, see MigrateNodes).
 MJ.ITEM_STATS = { drops = true, qty = true, first = true, last = true, other = true }
 -- Counters kept per character, per day and for the account by MJ:Bump.
 MJ.COUNTERS = { "kills", "corpses", "money", "vendor", "xp", "deaths", "dmgDone", "dmgTaken" }
@@ -148,6 +157,7 @@ function MJ:InitDB()
 	db.chars = db.chars or {}
 	db.totals = db.totals or {}
 	db.rares = db.rares or {}
+	db.nodeNames = db.nodeNames or {}
 	db.log = db.log or {}
 	db.recent = db.recent or {}
 	db.recent.kills = db.recent.kills or {}
@@ -241,6 +251,10 @@ function MJ:Migrate()
 		self:MigratePerCharacter()
 		db.version = 5
 	end
+	if db.version < 6 then
+		self:MigrateNodes()
+		db.version = 6
+	end
 end
 
 -- The character that did most of the killing (owner of data from before v5).
@@ -290,6 +304,59 @@ function MJ:MigratePerCharacter()
 	c.days, c.fishing, c.deathZones, c.deathEnv = db.days, db.fishing, db.deathZones, db.deathEnv
 	c.lastDeath = db.streak and db.streak.lastDeath
 	db.days, db.fishing, db.deathZones, db.deathEnv = nil, nil, nil, nil
+end
+
+-- What a gathering source from before v6 was called (no node was recorded then, only the item).
+MJ.LEGACY_NODE_NAMES = {
+	herb = "Herb nodes (earlier data)", mine = "Mining nodes (earlier data)",
+	object = "Chests & objects (earlier data)", container = "Containers (earlier data)",
+}
+
+-- v6: loot from herb / mining nodes, objects, containers and fishing is kept per source
+-- (c.nodes). Before v6 only per-item totals (gs.other) and fishing per zone existed. Fishing
+-- becomes one source per zone with its catch count; the rest becomes one "earlier data" source
+-- per kind, whose number of gathers is unknown.
+function MJ:MigrateNodes()
+	local db = self.db
+	db.nodeNames = db.nodeNames or {}
+	local function node(ck, key, kind, name, legacy)
+		local c = self:CharData(ck)
+		c.nodes = c.nodes or {}
+		local nd = c.nodes[key]
+		if not nd then
+			nd = { kind = kind, money = 0, items = {}, zones = {}, legacy = legacy }
+			c.nodes[key] = nd
+		end
+		db.nodeNames[key] = db.nodeNames[key] or name
+		return nd
+	end
+	for ck, c in pairs(db.chars) do
+		for zone, f in pairs(c.fishing or {}) do
+			local nd = node(ck, "fishing:" .. zone, "fishing", zone)
+			nd.count = f.catches
+			nd.zones[zone] = f.catches
+		end
+		c.fishing = nil
+	end
+	for itemId, g in pairs(db.items) do
+		for ck, gs in pairs(g.ch) do
+			for kind, o in pairs(gs.other or {}) do
+				local found = {}
+				if kind == "fishing" then
+					for zone, z in pairs(o) do found["fishing:" .. zone] = { z, "fishing", zone } end
+				else
+					found["legacy:" .. kind] = { o, kind, MJ.LEGACY_NODE_NAMES[kind] or kind, true }
+				end
+				for key, f in pairs(found) do
+					local nd = node(ck, key, f[2], f[3], f[4])
+					nd.items[itemId] = { drops = f[1].d or 0, qty = f[1].q or 0 }
+					g.nsrc = g.nsrc or {}
+					g.nsrc[key] = true
+				end
+			end
+			gs.other = nil
+		end
+	end
 end
 
 -- Dedupe tables survive /reload but are only needed for a short while.
@@ -591,7 +658,7 @@ SlashCmdList.MJURNAL = function(msg)
 		MJ:Print("/mj - toggle journal")
 		MJ:Print("/mj <text> - search monsters (falls back to loot)")
 		MJ:Print("/mj loot <text> - search loot")
-		MJ:Print("/mj overview | history - open a tab")
+		MJ:Print("/mj overview | gathering | history - open a tab")
 		MJ:Print("/mj session - print this session's numbers")
 		MJ:Print("/mj tooltip | itemtooltip | alerts | milestones | minimap | fade | combatfade - toggle features")
 		MJ:Print("/mj fade <percent> - opacity while moving or in combat, e.g. /mj fade 30")
@@ -626,6 +693,8 @@ SlashCmdList.MJURNAL = function(msg)
 		MJ.UI:Open(MJ.UI.TAB_OVERVIEW)
 	elseif cmd == "history" then
 		MJ.UI:Open(MJ.UI.TAB_HISTORY)
+	elseif cmd == "gathering" or cmd == "gather" then
+		MJ.UI:Open(MJ.UI.TAB_GATHER)
 	elseif cmd == "loot" then
 		MJ.UI:Search(MJ.UI.TAB_LOOT, rest)
 	elseif cmd == "session" then

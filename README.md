@@ -21,7 +21,7 @@ The journal works both ways:
   - **1 in X**, corpses since the last drop, corpses needed for a **50% / 90% / 99%** chance
   - longest dry streak and a **luck** score, plus an overdue highlight when a dry streak gets unlikely
 - **Quest drops** in their own table: items that only drop while a quest needs them get a rate per corpse looted *while the quest wanted them*, with a "needed now" marker
-- Skinning, herbalism, mining and pick pocket, kept separate from normal drops
+- Skinning, herbalism, mining and pick pocket on monsters, kept separate from normal drops
 - Time to kill, total combat time
 - Deaths: times it killed you (killing blow from the death recap) or was attacking you, kills per death, share of fights lost, its killing abilities and biggest killing blow, your level and the number of enemies on you, plus recent deaths
 - Damage dealt by you and your group, damage per kill (about its health), damage taken and its hardest-hitting abilities
@@ -31,8 +31,13 @@ The journal works both ways:
 
 ### Per item
 - Times looted, total quantity, average stack, vendor value earned
-- Every source monster with its own rate, plus fishing (per zone), containers and chests
+- Every source monster with its own rate, plus every gathering source (herb and mining nodes, chests, containers, fishing zones)
 - First and last time looted (when, which character, from what)
+
+### Gathering
+- Its own tab for loot that does not come from monsters: **herb nodes, mining nodes, chests and other objects, opened containers and fishing** (one source per zone)
+- Every source has its own loot table: times looted, quantity, per loot, drop rate and 1 in X, plus money, vendor value and value per loot, zones and characters
+- Nodes are named after what you cast on (*Copper Vein*, *Peacebloom*, *Battered Chest*); categories filter by type, and the overview ranks the best sources
 
 ### Overview & history
 - Totals, this session, today, last 7 and 30 days, all time, plus per-hour rates for the session
@@ -70,7 +75,7 @@ The journal works both ways:
 | Open the journal on the NPC under your mouse | Key binding *Open journal for mouseover NPC* |
 | Search monsters (falls back to loot) | `/mj <text>` |
 | Search loot | `/mj loot <text>` |
-| Overview / history tab | `/mj overview`, `/mj history` |
+| Overview / gathering / history tab | `/mj overview`, `/mj gathering`, `/mj history` |
 | This session's numbers in chat | `/mj session` |
 | Settings | Right-click the minimap button, the gear in the journal, or `/mj options` |
 | All commands | `/mj help` |
@@ -128,6 +133,7 @@ World of Warcraft\_forever_\WTF\Account\<ACCOUNT>\SavedVariables\MJurnal.lua
 - Only raw counts are stored. Rates and probabilities are calculated when you open the journal.
 - Every number is stored per character, so the journal can be filtered by character. When several characters are combined, counts are added up; "corpses since the last drop" uses the character that saw the item most recently.
 - Journals from before per-character data (v0.1) are converted on the first load: all older numbers go to the character with the most kills.
+- Gathering from before sources were tracked (v6) is kept as one *earlier data* source per type: the items are known, but not how many times you looted, so it has no rates. Fishing keeps its catch count per zone.
 - In the settings you can delete one character's data (*Delete a character's data...*) or everything (*Reset ALL journal data*). Deleting a character removes its numbers, history and rares; monsters and items no other character has seen disappear too.
 - The file grows mainly with the number of different monsters and items, not with the number of kills. Per-monster daily kill counts add a little per day played, and the history log keeps the latest ~5000 events.
 

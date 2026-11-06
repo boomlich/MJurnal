@@ -25,6 +25,7 @@ UI\Frame.lua
 UI\OverviewView.lua
 UI\MonsterView.lua
 UI\LootView.lua
+UI\GatherView.lua
 UI\HistoryView.lua
 UI\Settings.lua
 UI\MinimapButton.lua

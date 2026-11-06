@@ -1,16 +1,18 @@
--- UI/Frame.lua: main journal window with Overview / Monsters / Loot / History tabs.
+-- UI/Frame.lua: main journal window with Overview / Monsters / Loot / Gathering / History tabs.
 local _, MJ = ...
 local UI, St = MJ.UI, MJ.Stats
 
 local W, H = 1080, 680
 local LIST_W = 290
-local TABS = { "Overview", "Monsters", "Loot", "History" }
-local TAB_OVERVIEW, TAB_MONSTERS, TAB_LOOT, TAB_HISTORY = UI.TAB_OVERVIEW, UI.TAB_MONSTERS, UI.TAB_LOOT, UI.TAB_HISTORY
+local TABS = { "Overview", "Monsters", "Loot", "Gathering", "History" }
+local TAB_OVERVIEW, TAB_MONSTERS, TAB_LOOT, TAB_GATHER, TAB_HISTORY =
+	UI.TAB_OVERVIEW, UI.TAB_MONSTERS, UI.TAB_LOOT, UI.TAB_GATHER, UI.TAB_HISTORY
 
 local DEFAULT_SORT = "last" -- both journals open sorted by most recent
 
+local SORTS = { [TAB_MONSTERS] = St.MONSTER_SORTS, [TAB_LOOT] = St.LOOT_SORTS, [TAB_GATHER] = St.NODE_SORTS }
 local function sortsFor(tab)
-	return tab == TAB_MONSTERS and St.MONSTER_SORTS or St.LOOT_SORTS
+	return SORTS[tab]
 end
 
 local function sortIndex(tab, key)
@@ -24,12 +26,15 @@ UI.views = {}
 UI.state = {
 	tab = TAB_MONSTERS,
 	selected = {},
-	search = { [TAB_MONSTERS] = "", [TAB_LOOT] = "" },
-	sort = { [TAB_MONSTERS] = sortIndex(TAB_MONSTERS, DEFAULT_SORT), [TAB_LOOT] = sortIndex(TAB_LOOT, DEFAULT_SORT) },
+	search = { [TAB_MONSTERS] = "", [TAB_LOOT] = "", [TAB_GATHER] = "" },
+	sort = {
+		[TAB_MONSTERS] = sortIndex(TAB_MONSTERS, DEFAULT_SORT), [TAB_LOOT] = sortIndex(TAB_LOOT, DEFAULT_SORT),
+		[TAB_GATHER] = sortIndex(TAB_GATHER, DEFAULT_SORT),
+	},
 	category = {}, -- [tab] = category key (see Stats.lua), nil = the full list
 }
 
-local function hasList(tab) return tab == TAB_MONSTERS or tab == TAB_LOOT end
+local function hasList(tab) return SORTS[tab] ~= nil end
 
 local function currentSortKey(tab)
 	return sortsFor(tab)[UI.state.sort[tab]].key
@@ -138,9 +143,32 @@ local function LootElements()
 	return out
 end
 
+local function GatherElements()
+	local sortKey = currentSortKey(TAB_GATHER)
+	local out = {}
+	for _, e in ipairs(St.NodeList(UI.state.search[TAB_GATHER], sortKey, UI.state.category[TAB_GATHER])) do
+		local nd, count = e.nd, nil
+		if sortKey == "value" then
+			count = nd.count and MJ.Money(e.v) or UI.Grey("-")
+		elseif sortKey == "last" then
+			count = MJ.Ago(nd.last and nd.last.t)
+		else
+			count = nd.count and MJ.Num(nd.count) or UI.Grey("-")
+		end
+		out[#out + 1] = {
+			tab = TAB_GATHER, id = e.id, count = count, icon = UI.NodeIcon(nd.kind),
+			label = nd.legacy and UI.Grey(e.name) or e.name,
+		}
+	end
+	return out
+end
+
+local ELEMENTS = { [TAB_MONSTERS] = MonsterElements, [TAB_LOOT] = LootElements, [TAB_GATHER] = GatherElements }
+local COUNT_NOUN = { [TAB_MONSTERS] = " monsters", [TAB_LOOT] = " items", [TAB_GATHER] = " sources" }
+
 function UI:RefreshList(keepScroll)
 	if not self.frame or not hasList(self.state.tab) then return end
-	local elements = self.state.tab == TAB_MONSTERS and MonsterElements() or LootElements()
+	local elements = ELEMENTS[self.state.tab]()
 	self.listElements = elements
 	local dp = CreateDataProvider(elements)
 	if keepScroll and ScrollBoxConstants then
@@ -151,7 +179,7 @@ function UI:RefreshList(keepScroll)
 	local sorts = sortsFor(self.state.tab)
 	self.sortButton:SetText("Sort: " .. sorts[self.state.sort[self.state.tab]].label)
 	self.categoryButton:SetText(UI.CategoryLabel(self.state.tab, self.state.category[self.state.tab]))
-	self.countText:SetText(MJ.Num(#elements) .. (self.state.tab == TAB_MONSTERS and " monsters" or " items"))
+	self.countText:SetText(MJ.Num(#elements) .. COUNT_NOUN[self.state.tab])
 end
 
 -- Keeps the selection on a row that is still in the list (after a filter changed it).
@@ -241,13 +269,14 @@ local function charMenu()
 	return entries
 end
 
-local CATEGORY_TITLES = { type = "Creature type", class = "Classification", itype = "Item type", quest = "Quest" }
+local CATEGORY_TITLES = { type = "Creature type", class = "Classification", itype = "Item type", quest = "Quest", gkind = "Source" }
 
 -- Button text for a category: "Beast", "Elite", "Weapon", "Cloth (Armor)", "Quest items"
 function UI.CategoryLabel(tab, key)
 	if not key then return "Category: All" end
 	local kind, value = key:match("^(%a+):(.*)$")
 	if kind == "class" then value = UI.CLASS_LABEL[value] or value end
+	if kind == "gkind" then value = UI.NODE_KIND[value] or value end
 	if kind == "isub" then
 		local itype, sub = value:match("^([^:]*):(.*)$")
 		value = sub .. " (" .. itype .. ")"
@@ -255,6 +284,13 @@ function UI.CategoryLabel(tab, key)
 	if key == "quest" then value = "Quest items" end
 	return value or key
 end
+
+local ALL_LABEL = { [TAB_MONSTERS] = "All monsters", [TAB_LOOT] = "All items", [TAB_GATHER] = "All sources" }
+local CATEGORIES = {
+	[TAB_MONSTERS] = function() return St.MonsterCategories() end,
+	[TAB_LOOT] = function() return St.ItemCategories() end,
+	[TAB_GATHER] = function() return St.NodeCategories() end,
+}
 
 -- Item types whose subtypes are shown in the loot category menu (kept between sessions).
 local function expandedTypes()
@@ -275,9 +311,9 @@ local function categoryMenu()
 		end
 	end
 	local entries = {
-		{ text = tab == TAB_MONSTERS and "All monsters" or "All items", checked = current == nil, onClick = pick(nil) },
+		{ text = ALL_LABEL[tab], checked = current == nil, onClick = pick(nil) },
 	}
-	local cats = tab == TAB_MONSTERS and St.MonsterCategories() or St.ItemCategories()
+	local cats = CATEGORIES[tab]()
 
 	local parents = {}
 	for _, cat in ipairs(cats) do
@@ -618,6 +654,15 @@ function UI:Search(tab, text)
 	text = text or ""
 	-- a search looks through the full list; select the first row in the current sort order
 	self.state.category[TAB_MONSTERS], self.state.category[TAB_LOOT] = nil, nil
+	if tab == TAB_GATHER then
+		self.state.category[TAB_GATHER] = nil
+		self.state.search[TAB_GATHER] = text
+		local list = St.NodeList(text, currentSortKey(TAB_GATHER))
+		self.state.selected[tab] = list[1] and list[1].id or nil
+		self.state.tab = tab
+		if self.frame:IsShown() then self:SelectTab(tab) else self.frame:Show() end
+		return
+	end
 	local list = tab == TAB_MONSTERS and St.MonsterList(text, currentSortKey(TAB_MONSTERS)) or St.ItemList(text, currentSortKey(TAB_LOOT))
 	if tab == TAB_MONSTERS and #list == 0 then
 		-- no monster matches: fall back to the loot journal

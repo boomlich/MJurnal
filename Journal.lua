@@ -467,46 +467,62 @@ function MJ:RecordPickAttempt(npcId)
 	gk.tries = (gk.tries or 0) + 1
 end
 
--- Loot that does not come from an NPC: fishing, containers, chests, herb/mining nodes.
-function MJ:RecordOther(kind, src, zone)
-	zone = zone ~= "" and zone or "Unknown"
-	local vendor = 0
-	local fish
-	if kind == "fishing" then
-		local c = self:CharData()
-		c.fishing = c.fishing or {}
-		fish = c.fishing[zone]
-		if not fish then
-			fish = { catches = 0, items = {} }
-			c.fishing[zone] = fish
-		end
-		fish.catches = fish.catches + 1
+---------------------------------------------------------------------------
+-- Gathering sources: loot that does not come from an NPC
+--   kind: herb, mine (nodes), object (chests and other objects), container (opened items),
+--         fishing (one source per zone)
+--   key:  "go:<objectID>", "container:<itemID>", "fishing:<zone>" ("legacy:<kind>" = before v6)
+-- Each character has c.nodes[key] = { kind, count, money, items, zones, first, last }; the
+-- name is account-wide in db.nodeNames[key].
+---------------------------------------------------------------------------
+function MJ:NodeStats(key, kind, ck)
+	local c = self:CharData(ck)
+	c.nodes = c.nodes or {}
+	local nd = c.nodes[key]
+	if not nd then
+		nd = { kind = kind, count = 0, money = 0, items = {}, zones = {} }
+		c.nodes[key] = nd
 	end
+	return nd
+end
+
+-- A placeholder name ("Object #1731") is replaced once the real one is known.
+local function isPlaceholder(name)
+	return name == nil or name:match("#%d+$") ~= nil or name == "Object"
+end
+
+function MJ:RecordNode(kind, key, name, src, zone)
+	zone = zone ~= "" and zone or "Unknown"
+	local names = self.db.nodeNames
+	if name and isPlaceholder(names[key]) and not (isPlaceholder(name) and names[key]) then names[key] = name end
+	local nd = self:NodeStats(key, kind)
+	nd.count = (nd.count or 0) + 1
+	nd.money = nd.money + (src.money or 0)
+	nd.zones[zone] = (nd.zones[zone] or 0) + 1
+	local stamp = { t = time(), z = zone }
+	if not nd.first then nd.first = stamp end
+	nd.last = stamp
+	local vendor = 0
 	for itemId, e in pairs(src.items) do
-		local g, gs = self:RecordGlobalItem(itemId, e, nil, kind)
-		gs.other = gs.other or {}
-		local o
-		if kind == "fishing" then
-			gs.other.fishing = gs.other.fishing or {}
-			o = gs.other.fishing[zone]
-			if not o then
-				o = { d = 0, q = 0 }
-				gs.other.fishing[zone] = o
-			end
-			fish.items[itemId] = (fish.items[itemId] or 0) + e.q
-		else
-			o = gs.other[kind]
-			if not o then
-				o = { d = 0, q = 0 }
-				gs.other[kind] = o
-			end
+		local it = nd.items[itemId]
+		if not it then
+			it = { drops = 0, qty = 0 }
+			nd.items[itemId] = it
 		end
-		o.d = o.d + 1
-		o.q = o.q + e.q
+		it.drops = it.drops + 1
+		it.qty = it.qty + e.q
+		it.sMin = min(it.sMin or e.q, e.q)
+		it.sMax = max(it.sMax or e.q, e.q)
+		it.stacks = it.stacks or {}
+		it.stacks[e.q] = (it.stacks[e.q] or 0) + 1
+		local g = self:RecordGlobalItem(itemId, e, nil, kind)
+		g.nsrc = g.nsrc or {}
+		g.nsrc[key] = true
 		vendor = vendor + (g.sell or 0) * e.q
 	end
 	if (src.money or 0) > 0 then self:Bump("money", src.money) end
 	if vendor > 0 then self:Bump("vendor", vendor) end
+	self:Debug("%s: %s (%d item types)", kind, names[key] or key, self.Count(src.items))
 	self:Changed()
 end
 
@@ -780,6 +796,28 @@ function MJ:DeleteNPC(npcId)
 	self:Changed()
 end
 
+-- Deletes a gathering source for every character.
+function MJ:DeleteNode(key)
+	for ck, c in pairs(self.db.chars) do
+		local nd = c.nodes and c.nodes[key]
+		if nd then
+			for itemId, it in pairs(nd.items) do removeDrops(self, itemId, ck, it, "nsrc", key) end
+			c.nodes[key] = nil
+		end
+	end
+	self.db.nodeNames[key] = nil
+	self:Changed()
+end
+
+-- Whether any character still has itemId in gathering source key.
+local function nodeHasItem(db, key, itemId)
+	for _, c in pairs(db.chars) do
+		local nd = c.nodes and c.nodes[key]
+		if nd and nd.items[itemId] then return true end
+	end
+	return false
+end
+
 -- Whether any character still has itemId among the drops (or gathering) of NPC entry n.
 local function npcHasItem(n, itemId, gather)
 	for _, s in pairs(n.ch) do
@@ -794,8 +832,8 @@ local function npcHasItem(n, itemId, gather)
 	return false
 end
 
--- Deletes everything one character recorded: its numbers on every monster and item, its
--- counters, days, fishing and deaths, and its history log entries and rares. Monsters and
+-- Deletes everything one character recorded: its numbers on every monster, item and gathering
+-- source, its counters, days and deaths, and its history log entries and rares. Monsters and
 -- items no other character has are removed. The account kill streak is left alone.
 function MJ:DeleteCharacter(ck)
 	local db = self.db
@@ -819,12 +857,17 @@ function MJ:DeleteCharacter(ck)
 	end
 
 	local c = db.chars[ck]
+	db.chars[ck] = nil
+	for id, g in pairs(db.items) do
+		for key in pairs(g.nsrc or {}) do
+			if not nodeHasItem(db, key, id) then g.nsrc[key] = nil end
+		end
+	end
 	if c then
 		for _, f in ipairs(MJ.COUNTERS) do
 			if c[f] and db.totals[f] then db.totals[f] = max(0, db.totals[f] - c[f]) end
 		end
 	end
-	db.chars[ck] = nil
 
 	local kept = {}
 	for _, e in ipairs(db.log) do

@@ -202,7 +202,8 @@ function St.BuildView(filter)
 	local V = {
 		filter = filter, Includes = includes,
 		npcs = {}, items = {}, chars = {}, rares = {},
-		totals = {}, days = {}, fishing = {}, deathZones = {}, deathEnv = {},
+		totals = {}, days = {}, deathZones = {}, deathEnv = {},
+		nodes = {}, -- [key] = gathering source: kind, count, money, items, zones, first, last + key, name
 	}
 
 	for id, n in pairs(db.npcs) do
@@ -237,18 +238,27 @@ function St.BuildView(filter)
 	end
 
 	local streak = { cur = 0, best = 0 }
+	local nodeBuckets = {}
 	for ck, c in pairs(db.chars) do
 		if includes(ck) then
 			V.chars[ck] = c
 			for _, f in ipairs(MJ.COUNTERS) do V.totals[f] = (V.totals[f] or 0) + (c[f] or 0) end
 			mergeInto(V.days, c.days or {})
-			mergeInto(V.fishing, c.fishing or {})
+			for key, nd in pairs(c.nodes or {}) do
+				nodeBuckets[key] = nodeBuckets[key] or {}
+				table.insert(nodeBuckets[key], nd)
+			end
 			mergeInto(V.deathZones, c.deathZones or {})
 			mergeInto(V.deathEnv, c.deathEnv or {})
 			streak.cur = max(streak.cur, c.streak or 0)
 			streak.best = max(streak.best, c.bestStreak or 0)
 			if c.lastDeath then streak.lastDeath = max(streak.lastDeath or 0, c.lastDeath) end
 		end
+	end
+	for key, buckets in pairs(nodeBuckets) do
+		local e = combine(buckets, false)
+		e.key, e.name = key, db.nodeNames[key] or key
+		V.nodes[key] = e
 	end
 	if filter == nil then
 		-- the whole account: its own counters and its kill streak across characters
@@ -464,6 +474,47 @@ function St.ItemLuck(itemId, V)
 end
 
 ---------------------------------------------------------------------------
+-- Gathering sources (nd = a view node)
+---------------------------------------------------------------------------
+-- Vendor value of everything a source gave.
+function St.NodeVendor(nd)
+	local v = 0
+	for id, it in pairs(nd.items) do
+		local g = MJ.db.items[id]
+		if g and g.sell then v = v + g.sell * it.qty end
+	end
+	return v
+end
+
+-- Money + vendor value per gather (nil when the number of gathers is unknown).
+function St.NodeValuePer(nd)
+	if not nd.count or nd.count <= 0 then return nil end
+	return (nd.money + St.NodeVendor(nd)) / nd.count
+end
+
+-- Gathering sources of an item: { key, nd, it, count, rate, perGather }, best rate first.
+function St.ItemNodeSources(itemId, V)
+	V = V or St.View()
+	local g = MJ.db.items[itemId]
+	local list = {}
+	for key in pairs(g and g.nsrc or {}) do
+		local nd = V.nodes[key]
+		local it = nd and nd.items[itemId]
+		if it then
+			list[#list + 1] = {
+				key = key, nd = nd, it = it, count = nd.count,
+				rate = St.Rate(it.drops, nd.count) or 0, perGather = St.PerCorpse(it.qty, nd.count),
+			}
+		end
+	end
+	table.sort(list, function(a, b)
+		if a.rate ~= b.rate then return a.rate > b.rate end
+		return a.it.qty > b.it.qty
+	end)
+	return list
+end
+
+---------------------------------------------------------------------------
 -- Global aggregates (cached on the view)
 ---------------------------------------------------------------------------
 function St.Global(V)
@@ -559,6 +610,7 @@ end
 --   monsters: "type:<creature type>" or "class:<classification>"
 --   loot:     "itype:<item type>", "isub:<item type>:<subtype>" (Armor:Cloth, Weapon:Staves)
 --             or "quest"
+--   gathering: "gkind:<herb|mine|fishing|object|container>"
 -- nil = no category (the full list).
 ---------------------------------------------------------------------------
 local OTHER = "Other"
@@ -652,6 +704,11 @@ function St.ItemCategories(V)
 	return list
 end
 
+function St.NodeCategories(V)
+	V = V or St.View()
+	return collect(V.nodes, function(nd) return { { "gkind:" .. nd.kind, "gkind", nd.kind } } end)
+end
+
 ---------------------------------------------------------------------------
 -- Lists for the journal (search + category + sort)
 ---------------------------------------------------------------------------
@@ -662,6 +719,12 @@ St.MONSTER_SORTS = {
 	{ key = "value", label = "Value" },
 	{ key = "items", label = "Items" },
 	{ key = "deaths", label = "Deaths" },
+}
+St.NODE_SORTS = {
+	{ key = "count", label = "Times" },
+	{ key = "name", label = "Name" },
+	{ key = "last", label = "Recent" },
+	{ key = "value", label = "Value" },
 }
 St.LOOT_SORTS = {
 	{ key = "drops", label = "Drops" },
@@ -736,6 +799,34 @@ function St.ItemList(query, sortKey, category, V)
 			if a.v ~= b.v then return a.v > b.v end
 		else
 			if a.g.drops ~= b.g.drops then return a.g.drops > b.g.drops end
+		end
+		return a.name < b.name
+	end)
+	return out
+end
+
+function St.NodeList(query, sortKey, category, V)
+	V = V or St.View()
+	local q = query and query ~= "" and query:lower() or nil
+	local kind = category and category:match("^gkind:(.*)$")
+	local out = {}
+	for key, nd in pairs(V.nodes) do
+		if (not kind or nd.kind == kind) and matches(q, nd.name, key) then
+			local e = { id = key, name = nd.name, nd = nd }
+			if sortKey == "value" then e.v = St.NodeValuePer(nd) or 0 end
+			out[#out + 1] = e
+		end
+	end
+	table.sort(out, function(a, b)
+		if sortKey == "name" then return a.name < b.name end
+		if sortKey == "last" then
+			local ta, tb = a.nd.last and a.nd.last.t or 0, b.nd.last and b.nd.last.t or 0
+			if ta ~= tb then return ta > tb end
+		elseif sortKey == "value" then
+			if a.v ~= b.v then return a.v > b.v end
+		else
+			local ca, cb = a.nd.count or 0, b.nd.count or 0
+			if ca ~= cb then return ca > cb end
 		end
 		return a.name < b.name
 	end)

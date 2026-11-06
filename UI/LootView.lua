@@ -5,13 +5,9 @@ local Num, Pct, Money = MJ.Num, MJ.Pct, MJ.Money
 local Grey = UI.Grey
 local format, max = string.format, math.max
 
-local OTHER_LABEL = {
-	container = "Opened containers", object = "Chests & objects", herb = "Herb nodes", mine = "Mining nodes",
-}
-
 local function stampText(s)
 	if not s then return "-" end
-	local from = s.n and MJ:NPCName(s.n) or (s.k and (UI.GATHER_LABEL[s.k] or OTHER_LABEL[s.k] or s.k)) or "?"
+	local from = s.n and MJ:NPCName(s.n) or (s.k and (UI.GATHER_LABEL[s.k] or UI.NODE_KIND[s.k] or s.k)) or "?"
 	return format("%s · %s · %s", MJ.Date(s.t), MJ:CharName(s.c), from)
 end
 
@@ -118,30 +114,26 @@ function UI.views.loot(c, itemId)
 		c:Table({ { "Monster", 190 }, { "Method", 90 }, { "Times", 50, "RIGHT" }, { "Qty", 50, "RIGHT" }, { "Attempts", 60, "RIGHT" }, { "Rate", 60, "RIGHT" } }, grows)
 	end
 
-	local other = g.other
-	if other then
-		if other.fishing then
-			c:Section("Fishing")
-			local frows = {}
-			for zone, o in pairs(other.fishing) do
-				local f = V.fishing[zone]
-				local catches = f and f.catches or 0
-				local p = catches > 0 and o.d / catches or nil
-				frows[#frows + 1] = { k = o.d, cells = { zone, Num(o.d), Num(o.q), Num(catches), UI.RateText(p, catches), UI.OneIn(p) } }
-			end
-			table.sort(frows, function(a, b) return a.k > b.k end)
-			c:Table({ { "Zone", 190 }, { "Caught", 54, "RIGHT" }, { "Qty", 50, "RIGHT" }, { "Casts", 54, "RIGHT", "Total loot windows while fishing in this zone." }, { "Rate", 60, "RIGHT" }, { "1 in", 50, "RIGHT" } }, frows)
+	local nsources = St.ItemNodeSources(itemId, V)
+	if #nsources > 0 then
+		c:Section("Gathered from", "herbs, ore, chests, containers, fishing · click to open")
+		local nrows = {}
+		for _, s in ipairs(nsources) do
+			local nd = s.nd
+			nrows[#nrows + 1] = {
+				icon = UI.NodeIcon(nd.kind),
+				cells = {
+					nd.legacy and Grey(nd.name) or nd.name, UI.NODE_KIND[nd.kind] or nd.kind, Num(s.it.drops), Num(s.it.qty),
+					nd.count and Num(nd.count) or Grey("-"), UI.PerCorpseText(s.perGather, s.count), UI.RateText(s.count and s.rate, s.count),
+				},
+				onClick = function() UI:Open(UI.TAB_GATHER, s.key) end,
+			}
 		end
-		local orows = {}
-		for kind, o in pairs(other) do
-			if kind ~= "fishing" then
-				orows[#orows + 1] = { cells = { OTHER_LABEL[kind] or kind, Num(o.d), Num(o.q) } }
-			end
-		end
-		if #orows > 0 then
-			c:Section("Other sources")
-			c:Table({ { "Source", 190 }, { "Times", 54, "RIGHT" }, { "Qty", 54, "RIGHT" } }, orows)
-		end
+		c:Table({
+			{ "Source", 190 }, { "Type", 110 }, { "Times", 50, "RIGHT", "Loots that had this item." }, { "Qty", 50, "RIGHT" },
+			{ "Looted", 54, "RIGHT", "Times you looted this source (unknown for data from before sources were tracked)." },
+			{ "Per loot", 60, "RIGHT", "Average number of this item per loot." }, { "Rate", 56, "RIGHT" },
+		}, nrows)
 	end
 
 	c:Space(6)
