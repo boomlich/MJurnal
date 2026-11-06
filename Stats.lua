@@ -557,7 +557,8 @@ end
 ---------------------------------------------------------------------------
 -- Categories (the list filter next to the search box)
 --   monsters: "type:<creature type>" or "class:<classification>"
---   loot:     "itype:<item type>" or "quest"
+--   loot:     "itype:<item type>", "isub:<item type>:<subtype>" (Armor:Cloth, Weapon:Staves)
+--             or "quest"
 -- nil = no category (the full list).
 ---------------------------------------------------------------------------
 local OTHER = "Other"
@@ -575,6 +576,8 @@ local function itemInCategory(g, cat)
 	if cat == "quest" then return g.quest == true end
 	local value = cat:match("^itype:(.*)$")
 	if value then return (g.itype or OTHER) == value end
+	local t, sub = cat:match("^isub:([^:]*):(.*)$")
+	if t then return (g.itype or OTHER) == t and g.isub == sub end
 	return true
 end
 
@@ -611,14 +614,40 @@ function St.MonsterCategories(V)
 	end)
 end
 
+-- Item types, each followed by its subtypes (sub = true) when it has more than one.
 function St.ItemCategories(V)
 	V = V or St.View()
-	return collect(V.items, function(g)
+	local subs = {} -- [item type] = { [subtype] = count }
+	for _, g in pairs(V.items) do
+		local t = g.itype or OTHER
+		-- many types have a single subtype named like the type itself (Trade Goods / Trade Goods)
+		if g.isub and g.isub ~= t then
+			subs[t] = subs[t] or {}
+			subs[t][g.isub] = (subs[t][g.isub] or 0) + 1
+		end
+	end
+	local list = {}
+	for _, cat in ipairs(collect(V.items, function(g)
 		local t = g.itype or OTHER
 		local keys = { { "itype:" .. t, "itype", t } }
 		if g.quest then keys[2] = { "quest", "quest", "quest" } end
 		return keys
-	end)
+	end)) do
+		list[#list + 1] = cat
+		local children = {}
+		for name, count in pairs(cat.kind == "itype" and subs[cat.value] or {}) do
+			children[#children + 1] = { key = "isub:" .. cat.value .. ":" .. name, kind = "itype", value = name, count = count, sub = true }
+		end
+		-- a single subtype covering the whole type adds nothing
+		if #children > 1 or (#children == 1 and children[1].count < cat.count) then
+			table.sort(children, function(a, b)
+				if a.count ~= b.count then return a.count > b.count end
+				return a.value < b.value
+			end)
+			for _, c in ipairs(children) do list[#list + 1] = c end
+		end
+	end
+	return list
 end
 
 ---------------------------------------------------------------------------

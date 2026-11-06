@@ -243,10 +243,15 @@ end
 
 local CATEGORY_TITLES = { type = "Creature type", class = "Classification", itype = "Item type", quest = "Quest" }
 
+-- Button text for a category: "Beast", "Elite", "Weapon", "Cloth (Armor)", "Quest items"
 function UI.CategoryLabel(tab, key)
 	if not key then return "Category: All" end
 	local kind, value = key:match("^(%a+):(.*)$")
 	if kind == "class" then value = UI.CLASS_LABEL[value] or value end
+	if kind == "isub" then
+		local itype, sub = value:match("^([^:]*):(.*)$")
+		value = sub .. " (" .. itype .. ")"
+	end
 	if key == "quest" then value = "Quest items" end
 	return value or key
 end
@@ -272,7 +277,9 @@ local function categoryMenu()
 			lastKind = cat.kind
 		end
 		entries[#entries + 1] = {
-			text = UI.CategoryLabel(tab, cat.key) .. UI.Grey("  " .. MJ.Num(cat.count)),
+			-- subtypes are listed indented under their item type
+			text = (cat.sub and cat.value or UI.CategoryLabel(tab, cat.key)) .. UI.Grey("  " .. MJ.Num(cat.count)),
+			indent = cat.sub and 14 or nil,
 			checked = current == cat.key, onClick = pick(cat.key),
 		}
 	end

@@ -335,7 +335,7 @@ end
 ---------------------------------------------------------------------------
 -- Popup menu (character and category filters)
 --   UI.ToggleMenu(anchor, build): build() returns the entries, rebuilt after every click so
---   check marks stay current. Entry: { text, checked, onClick, keepOpen, title, separator }
+--   check marks stay current. Entry: { text, checked, onClick, keepOpen, title, separator, indent }
 ---------------------------------------------------------------------------
 local menu
 local ROW_H = 18
@@ -391,12 +391,15 @@ function UI.FillMenu()
 		row.line:SetShown(e.separator == true)
 		row.text:SetShown(not e.separator)
 		row.check:SetShown(e.checked == true)
+		local indent = e.indent or 0
+		row.check:SetPoint("LEFT", 6 + indent, 0)
+		row.text:SetPoint("LEFT", 24 + indent, 0)
 		row.text:SetText(e.text or "")
 		row.text:SetFontObject(e.title and GameFontNormalSmall or GameFontHighlightSmall)
 		row:EnableMouse(e.onClick ~= nil)
 		row.hl:SetShown(e.onClick ~= nil)
 		row:Show()
-		width = math.max(width, row.text:GetStringWidth() + 40)
+		width = math.max(width, row.text:GetStringWidth() + 40 + indent)
 	end
 	for i = #entries + 1, #menu.rows do menu.rows[i]:Hide() end
 	menu:SetSize(width, #entries * ROW_H + 8)
