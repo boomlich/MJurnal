@@ -105,6 +105,46 @@ local function build()
 		StaticPopup_Show("MJURNAL_RESET_ALL")
 	end)
 
+	-- delete one character: pick it from a menu, then confirm
+	StaticPopupDialogs.MJURNAL_DELETE_CHAR = {
+		text = "Delete all MJurnal data for %s?\n\nIts kills, loot, deaths and history are removed. Monsters and items only this character has seen disappear from the journal. This cannot be undone.",
+		button1 = YES or "Yes",
+		button2 = NO or "No",
+		OnAccept = function(_, ck)
+			local name = MJ:CharName(ck)
+			MJ:DeleteCharacter(ck)
+			MJ:Print("Deleted the journal data of " .. name .. ".")
+		end,
+		timeout = 0,
+		whileDead = true,
+		hideOnEscape = true,
+		showAlert = true,
+	}
+	local function charMenu()
+		local chars = {}
+		for ck, c in pairs(MJ.db.chars) do chars[#chars + 1] = { ck = ck, kills = c.kills or 0 } end
+		table.sort(chars, function(a, b)
+			if a.kills ~= b.kills then return a.kills > b.kills end
+			return a.ck < b.ck
+		end)
+		local entries = { { text = "Delete the data of:", title = true } }
+		for _, ch in ipairs(chars) do
+			local ck = ch.ck
+			entries[#entries + 1] = {
+				text = MJ:CharName(ck) .. UI.Grey(" - " .. (ck:match("%-(.+)$") or ck) .. ", " .. MJ.Num(ch.kills) .. " kills"),
+				onClick = function() StaticPopup_Show("MJURNAL_DELETE_CHAR", ck, nil, ck) end,
+			}
+		end
+		if #chars == 0 then entries[2] = { text = UI.Grey("No characters recorded yet.") } end
+		return entries
+	end
+	local deleteChar = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+	deleteChar:SetSize(200, 22)
+	deleteChar:SetPoint("LEFT", reset, "RIGHT", 10, 0)
+	deleteChar:SetText("Delete a character's data...")
+	deleteChar:SetScript("OnClick", function(b) UI.ToggleMenu(b, charMenu) end)
+	panel:SetScript("OnHide", function() UI.HideMenu() end)
+
 	panel:SetScript("OnShow", function()
 		for _, cb in ipairs(panel.checks) do cb:SetChecked(MJ.db.settings[cb.key]) end
 		updateQ()

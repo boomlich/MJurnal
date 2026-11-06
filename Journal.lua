@@ -779,3 +779,72 @@ function MJ:DeleteNPC(npcId)
 	self.db.npcs[npcId] = nil
 	self:Changed()
 end
+
+-- Whether any character still has itemId among the drops (or gathering) of NPC entry n.
+local function npcHasItem(n, itemId, gather)
+	for _, s in pairs(n.ch) do
+		if gather then
+			for _, gk in pairs(s.gather or {}) do
+				if gk.items[itemId] then return true end
+			end
+		elseif s.items[itemId] then
+			return true
+		end
+	end
+	return false
+end
+
+-- Deletes everything one character recorded: its numbers on every monster and item, its
+-- counters, days, fishing and deaths, and its history log entries and rares. Monsters and
+-- items no other character has are removed. The account kill streak is left alone.
+function MJ:DeleteCharacter(ck)
+	local db = self.db
+	for id, n in pairs(db.npcs) do
+		n.ch[ck] = nil
+		if not next(n.ch) then db.npcs[id] = nil end
+	end
+	for id, g in pairs(db.items) do
+		g.ch[ck] = nil
+		if not next(g.ch) then
+			db.items[id] = nil
+		else
+			-- forget sources only this character had
+			for _, key in ipairs({ "src", "gsrc" }) do
+				for npcId in pairs(g[key] or {}) do
+					local n = db.npcs[npcId]
+					if not n or not npcHasItem(n, id, key == "gsrc") then g[key][npcId] = nil end
+				end
+			end
+		end
+	end
+
+	local c = db.chars[ck]
+	if c then
+		for _, f in ipairs(MJ.COUNTERS) do
+			if c[f] and db.totals[f] then db.totals[f] = max(0, db.totals[f] - c[f]) end
+		end
+	end
+	db.chars[ck] = nil
+
+	local kept = {}
+	for _, e in ipairs(db.log) do
+		if e.c ~= ck then kept[#kept + 1] = e end
+	end
+	db.log = kept
+	for id, r in pairs(db.rares) do
+		if r.c == ck then db.rares[id] = nil end
+	end
+
+	if ck == self.charKey then
+		-- you are playing this character: start it over
+		self.session = { start = time(), npcKills = {} }
+		self.recentKills, self.lastKill = {}, nil
+		self:CharData().class = select(2, UnitClass("player"))
+	end
+	local filter = self:CharFilter()
+	if filter and filter[ck] then
+		filter[ck] = nil
+		self:SetCharFilter(filter)
+	end
+	self:Changed()
+end

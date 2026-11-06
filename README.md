@@ -128,6 +128,7 @@ World of Warcraft\_forever_\WTF\Account\<ACCOUNT>\SavedVariables\MJurnal.lua
 - Only raw counts are stored. Rates and probabilities are calculated when you open the journal.
 - Every number is stored per character, so the journal can be filtered by character. When several characters are combined, counts are added up; "corpses since the last drop" uses the character that saw the item most recently.
 - Journals from before per-character data (v0.1) are converted on the first load: all older numbers go to the character with the most kills.
+- In the settings you can delete one character's data (*Delete a character's data...*) or everything (*Reset ALL journal data*). Deleting a character removes its numbers, history and rares; monsters and items no other character has seen disappear too.
 - The file grows mainly with the number of different monsters and items, not with the number of kills. Per-monster daily kill counts add a little per day played, and the history log keeps the latest ~5000 events.
 
 ## Project layout
