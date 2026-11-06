@@ -7,15 +7,32 @@ local LIST_W = 290
 local TABS = { "Overview", "Monsters", "Loot", "History" }
 local TAB_OVERVIEW, TAB_MONSTERS, TAB_LOOT, TAB_HISTORY = UI.TAB_OVERVIEW, UI.TAB_MONSTERS, UI.TAB_LOOT, UI.TAB_HISTORY
 
+local DEFAULT_SORT = "last" -- both journals open sorted by most recent
+
+local function sortsFor(tab)
+	return tab == TAB_MONSTERS and St.MONSTER_SORTS or St.LOOT_SORTS
+end
+
+local function sortIndex(tab, key)
+	for i, s in ipairs(sortsFor(tab)) do
+		if s.key == key then return i end
+	end
+	return 1
+end
+
 UI.views = {}
 UI.state = {
 	tab = TAB_MONSTERS,
 	selected = {},
 	search = { [TAB_MONSTERS] = "", [TAB_LOOT] = "" },
-	sort = { [TAB_MONSTERS] = 1, [TAB_LOOT] = 1 },
+	sort = { [TAB_MONSTERS] = sortIndex(TAB_MONSTERS, DEFAULT_SORT), [TAB_LOOT] = sortIndex(TAB_LOOT, DEFAULT_SORT) },
 }
 
 local function hasList(tab) return tab == TAB_MONSTERS or tab == TAB_LOOT end
+
+local function currentSortKey(tab)
+	return sortsFor(tab)[UI.state.sort[tab]].key
+end
 
 local function inCombat()
 	return InCombatLockdown() or MJ.S(UnitAffectingCombat("player")) and true or false
@@ -76,7 +93,7 @@ local function InitListButton(btn, data)
 end
 
 local function MonsterElements()
-	local sortKey = St.MONSTER_SORTS[UI.state.sort[TAB_MONSTERS]].key
+	local sortKey = currentSortKey(TAB_MONSTERS)
 	local out = {}
 	for _, e in ipairs(St.MonsterList(UI.state.search[TAB_MONSTERS], sortKey)) do
 		local count
@@ -101,7 +118,7 @@ local function MonsterElements()
 end
 
 local function LootElements()
-	local sortKey = St.LOOT_SORTS[UI.state.sort[TAB_LOOT]].key
+	local sortKey = currentSortKey(TAB_LOOT)
 	local out = {}
 	for _, e in ipairs(St.ItemList(UI.state.search[TAB_LOOT], sortKey)) do
 		local count
@@ -130,14 +147,14 @@ function UI:RefreshList(keepScroll)
 	else
 		self.scrollBox:SetDataProvider(dp)
 	end
-	local sorts = self.state.tab == TAB_MONSTERS and St.MONSTER_SORTS or St.LOOT_SORTS
+	local sorts = sortsFor(self.state.tab)
 	self.sortButton:SetText("Sort: " .. sorts[self.state.sort[self.state.tab]].label)
 	self.countText:SetText(MJ.Num(#elements) .. (self.state.tab == TAB_MONSTERS and " monsters" or " items"))
 end
 
 function UI:CycleSort()
 	local tab = self.state.tab
-	local sorts = tab == TAB_MONSTERS and St.MONSTER_SORTS or St.LOOT_SORTS
+	local sorts = sortsFor(tab)
 	self.state.sort[tab] = self.state.sort[tab] % #sorts + 1
 	self:RefreshList()
 end
@@ -418,10 +435,11 @@ function UI:Search(tab, text)
 	if not MJ.db then return end
 	self:Build()
 	text = text or ""
-	local list = tab == TAB_MONSTERS and St.MonsterList(text, "kills") or St.ItemList(text, "drops")
+	-- select the first row as the list will show it, in the current sort order
+	local list = tab == TAB_MONSTERS and St.MonsterList(text, currentSortKey(TAB_MONSTERS)) or St.ItemList(text, currentSortKey(TAB_LOOT))
 	if tab == TAB_MONSTERS and #list == 0 then
 		-- no monster matches: fall back to the loot journal
-		local items = St.ItemList(text, "drops")
+		local items = St.ItemList(text, currentSortKey(TAB_LOOT))
 		if #items > 0 then tab, list = TAB_LOOT, items end
 	end
 	self.state.search[tab] = text
