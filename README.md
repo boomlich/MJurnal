@@ -62,7 +62,7 @@ The journal works both ways:
 - **Key binding** to open the journal on the NPC under your mouse
 - Minimap button (draggable), addon compartment entry and a LibDataBroker launcher
 - A short MJurnal line on NPC and item tooltips
-- **Quest drop stats on NPC tooltips**: on a monster that drops an item your quest log needs, the quest objective line gets the numbers too, e.g. *Murloc Fin: 3/6  32% drop · ~9 kills left*. Choose what is shown in the settings (drop rate, kills left, 1 in X, average per kill, drops / corpses, corpses since the last drop)
+- **Quest drop stats on NPC tooltips**: on a monster that drops an item your quest log needs, the numbers go under its quest objective line (*Murloc Fin: 3/6*, then *32% drop · 9 kills left* on the row below). Choose what is shown in the settings (drop rate, kills left, 1 in X, average per kill, drops / corpses, corpses since the last drop). Works with Blizzard's quest lines and with Questie's
 - Chat alerts for rare drops, kill milestones, new entries and rare monsters
 - Fades while you move (like the world map) or are in combat, and stays fully visible under the mouse
 

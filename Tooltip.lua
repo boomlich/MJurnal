@@ -23,8 +23,10 @@ end
 ---------------------------------------------------------------------------
 -- Quest drops (settings qt*: which numbers to show)
 ---------------------------------------------------------------------------
--- "32% drop · ~9 kills left" for one quest item this monster drops, or nil.
--- want = { have, need } from the quest log.
+local INDENT = "      " -- the stats sit indented under the objective text
+
+-- The row shown under an objective for one quest item this monster drops, e.g.
+-- "32.0% drop · 9 kills left", or nil. want = { have, need } from the quest log.
 local function questStats(n, itemId, it, want, s)
 	local d, corpses, _, since, _, qty = St.ItemBase(n, itemId, it)
 	if not corpses or corpses <= 0 then return nil end
@@ -36,14 +38,14 @@ local function questStats(n, itemId, it, want, s)
 	if s.qtPerCorpse and per then parts[#parts + 1] = format("%.2f per kill", per) end
 	if s.qtLeft and want.have and want.need and per and per > 0 then
 		local left = want.need - want.have
-		if left > 0 then parts[#parts + 1] = "~" .. MJ.Num(math.ceil(left / per)) .. " kills left" end
+		if left > 0 then parts[#parts + 1] = MJ.Num(math.ceil(left / per)) .. " kills left" end
 	end
 	if s.qtSample then parts[#parts + 1] = MJ.Num(d) .. "/" .. MJ.Num(corpses) .. " corpses" end
 	if s.qtSince then parts[#parts + 1] = MJ.Num(since) .. " since last drop" end
 	if #parts == 0 then return nil end
 	-- grey until the sample is decent, like the journal
 	local color = St.Confident(corpses) and "|cffd4a017" or "|cff9d9d9d"
-	return color .. table.concat(parts, " · ") .. "|r"
+	return INDENT .. color .. table.concat(parts, " · ") .. "|r"
 end
 
 -- The quest objective line for an item: it names the item and shows progress ("3/6"), so a
@@ -60,8 +62,9 @@ local function findLine(tooltip, name)
 	end
 end
 
--- Adds the stats to each quest objective line of a quest item this monster has dropped, or
--- as a line of its own when the tooltip has no objective line for it.
+-- Adds the stats under each quest objective line of a quest item this monster has dropped (as
+-- a second row of that line: a tooltip can't insert lines in the middle), or as lines of their
+-- own when the tooltip has no objective line for it.
 local function questLines(tooltip, n)
 	local s = MJ.db.settings
 	local wanted = MJ.WantedQuestItems()
@@ -75,9 +78,10 @@ local function questLines(tooltip, n)
 			if stats then
 				local fs, text = findLine(tooltip, name)
 				if fs then
-					fs:SetText(text .. "  " .. stats)
+					fs:SetText(text .. "\n" .. stats)
 				else
-					tooltip:AddLine(PREFIX .. name .. ": " .. stats, 1, 1, 1)
+					tooltip:AddLine(PREFIX .. name, 1, 1, 1)
+					tooltip:AddLine(stats, 1, 1, 1)
 				end
 				changed = true
 			end
