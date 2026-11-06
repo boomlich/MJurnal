@@ -1,6 +1,11 @@
 -- Tooltip.lua: MJurnal lines on NPC and item tooltips (always the whole account).
 --   NPC tooltips: kills / loot / value, and quest drop stats next to the quest objective
 --   lines ("Murloc Fin: 3/6") for the quest items that monster has dropped.
+--
+-- The objective lines may not be there yet when MJurnal's tooltip callback runs: quest addons
+-- such as Questie hide Blizzard's quest lines and add their own in a callback of their own,
+-- which can run after ours. So the quest stats are added a frame later, once every addon is
+-- done with the tooltip.
 local _, MJ = ...
 local St = MJ.Stats
 local format = string.format
@@ -41,14 +46,17 @@ local function questStats(n, itemId, it, want, s)
 	return color .. table.concat(parts, " · ") .. "|r"
 end
 
--- The tooltip line that mentions name (the quest objective line), if any.
+-- The quest objective line for an item: it names the item and shows progress ("3/6"), so a
+-- quest title that happens to contain the item's name is not mistaken for it.
 local function findLine(tooltip, name)
 	local tname = tooltip.GetName and tooltip:GetName()
 	if not tname or not tooltip.NumLines then return nil end
 	for i = 2, tooltip:NumLines() do
 		local fs = _G[tname .. "TextLeft" .. i]
 		local text = fs and MJ.S(fs:GetText())
-		if type(text) == "string" and text:find(name, 1, true) then return fs, text end
+		if type(text) == "string" and text:find(name, 1, true) and text:find("%d+%s*/%s*%d+") then
+			return fs, text
+		end
 	end
 end
 
@@ -68,15 +76,32 @@ local function questLines(tooltip, n)
 				local fs, text = findLine(tooltip, name)
 				if fs then
 					fs:SetText(text .. "  " .. stats)
-					changed = true
 				else
 					tooltip:AddLine(PREFIX .. name .. ": " .. stats, 1, 1, 1)
 				end
+				changed = true
 			end
 		end
 	end
-	-- a longer line needs the tooltip to resize
+	-- longer or extra lines need the tooltip to resize
 	if changed then tooltip:Show() end
+end
+
+-- The NPC tooltip waiting for its quest stats: { tooltip, guid, n }. Dropped when the tooltip
+-- is cleared (it shows something else, or is rebuilt and will ask again).
+local pendingQuest
+local clearHooked = false
+
+local function addPendingQuestLines()
+	local p = pendingQuest
+	pendingQuest = nil
+	if not p or not p.tooltip:IsShown() then return end
+	if not clearHooked then
+		-- without a clear notification: only while it still shows the same monster
+		local ok, _, unit = pcall(p.tooltip.GetUnit, p.tooltip)
+		if not ok or MJ.SafeGUID(unit) ~= p.guid then return end
+	end
+	questLines(p.tooltip, p.n)
 end
 
 local function unitLines(tooltip, guid)
@@ -86,7 +111,10 @@ local function unitLines(tooltip, guid)
 	if not n then return end
 	local s = MJ.db.settings
 	if s.unitTooltip then npcLine(tooltip, n) end
-	if s.questTooltip then questLines(tooltip, n) end
+	if s.questTooltip and next(MJ.WantedQuestItems()) then
+		pendingQuest = { tooltip = tooltip, guid = guid, n = n }
+		C_Timer.After(0, addPendingQuestLines)
+	end
 end
 
 ---------------------------------------------------------------------------
@@ -105,6 +133,10 @@ local function itemLine(tooltip, itemId)
 end
 
 local function setup()
+	if GameTooltip.HasScript and GameTooltip:HasScript("OnTooltipCleared") then
+		GameTooltip:HookScript("OnTooltipCleared", function() pendingQuest = nil end)
+		clearHooked = true
+	end
 	if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType then
 		TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip, data)
 			if tooltip ~= GameTooltip or not MJ.db then return end
