@@ -680,6 +680,61 @@ local function inZone(e, zone)
 	return not zone or (e.zones ~= nil and e.zones[zone] ~= nil)
 end
 
+-- Zone groups: "c:<continent>" (Eastern Kingdoms, Kalimdor...), "dungeon", "raid", "pvp" or "other".
+-- Where you kill or loot, MJurnal notes the zone's group (MJ:NoteZone). Zones recorded before
+-- that are looked up in the game's map data; the map can't tell raids from dungeons, so the
+-- classic raids are known by name until you are there again.
+local RAIDS = {
+	["Molten Core"] = true, ["Onyxia's Lair"] = true, ["Blackwing Lair"] = true, ["Zul'Gurub"] = true,
+	["Ruins of Ahn'Qiraj"] = true, ["Ahn'Qiraj Temple"] = true, ["Temple of Ahn'Qiraj"] = true, ["Naxxramas"] = true,
+}
+local mapGroups -- [zone name] = group, from the map data (built once per session)
+
+local function buildMapGroups()
+	mapGroups = {}
+	local UIMap = Enum and Enum.UIMapType
+	if not (C_Map and C_Map.GetMapChildrenInfo and UIMap) then return end
+	local world = C_Map.GetFallbackWorldMapID and MJ.S(C_Map.GetFallbackWorldMapID()) or 947
+	local function children(mapID, mapType)
+		local ok, list = pcall(C_Map.GetMapChildrenInfo, mapID, mapType, true)
+		return ok and type(list) == "table" and list or {}
+	end
+	for _, c in ipairs(children(world, UIMap.Continent)) do
+		local continent = MJ.S(c.name)
+		if continent then
+			for _, z in ipairs(children(c.mapID, UIMap.Zone)) do
+				local name = MJ.S(z.name)
+				if name then mapGroups[name] = mapGroups[name] or ("c:" .. continent) end
+			end
+			for _, d in ipairs(children(c.mapID, UIMap.Dungeon)) do
+				local name = MJ.S(d.name)
+				if name then mapGroups[name] = mapGroups[name] or (RAIDS[name] and "raid" or "dungeon") end
+			end
+		end
+	end
+end
+
+function St.ZoneGroup(zone)
+	local noted = MJ.db.zoneGroups[zone]
+	if noted then return noted end
+	if not mapGroups then buildMapGroups() end
+	return mapGroups[zone] or (RAIDS[zone] and "raid") or "other"
+end
+
+local GROUP_LABEL = { dungeon = "Dungeons", raid = "Raids", pvp = "Battlegrounds", other = "Other" }
+local GROUP_ORDER = { dungeon = 2, raid = 3, pvp = 4, other = 5 } -- continents first (1)
+
+function St.ZoneGroupLabel(group)
+	return GROUP_LABEL[group] or group:match("^c:(.*)$") or group
+end
+
+-- Sorts groups: continents by name, then dungeons, raids, battlegrounds, other.
+function St.ZoneGroupBefore(a, b)
+	local oa, ob = GROUP_ORDER[a] or 1, GROUP_ORDER[b] or 1
+	if oa ~= ob then return oa < ob end
+	return a < b
+end
+
 local function monsterInCategory(n, cat)
 	if not cat then return true end
 	local kind, value = cat:match("^(%a+):(.*)$")
@@ -734,7 +789,8 @@ function St.MonsterCategories(V, zone)
 	end, zone)
 end
 
--- Zones of the entries that pass keep: { { zone, count }, ... }, most entries first.
+-- Zones of the entries that pass keep: { { zone, count, group }, ... }, grouped (continents,
+-- dungeons, raids...) and most entries first within a group.
 local function zonesOf(tbl, keep)
 	local counts = {}
 	for id, e in pairs(tbl) do
@@ -743,8 +799,9 @@ local function zonesOf(tbl, keep)
 		end
 	end
 	local list = {}
-	for zone, count in pairs(counts) do list[#list + 1] = { zone = zone, count = count } end
+	for zone, count in pairs(counts) do list[#list + 1] = { zone = zone, count = count, group = St.ZoneGroup(zone) } end
 	table.sort(list, function(a, b)
+		if a.group ~= b.group then return St.ZoneGroupBefore(a.group, b.group) end
 		if a.count ~= b.count then return a.count > b.count end
 		return a.zone < b.zone
 	end)

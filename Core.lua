@@ -136,6 +136,7 @@ local DEFAULT_SETTINGS = {
 --   db.chars[charKey] = counters (COUNTERS), days, deathZones, deathEnv, streaks and
 --                       nodes[key] = loot from one gathering source (see MJ:RecordNode)
 --   db.nodeNames[key] = the name of a gathering source
+--   db.zoneGroups[zone] = which continent the zone is on, or that it is a dungeon / raid
 --   db.totals, db.streak = account-wide counters (milestones, launcher tooltip)
 --   db.prices[realm:faction][itemID] = auction house price (Tracker/Auction.lua)
 -- Views combine the ch buckets of the characters you selected (see Stats.lua).
@@ -167,6 +168,7 @@ function MJ:InitDB()
 	db.totals = db.totals or {}
 	db.rares = db.rares or {}
 	db.nodeNames = db.nodeNames or {}
+	db.zoneGroups = db.zoneGroups or {} -- [zone] = "dungeon" | "raid" | "pvp" | "c:<continent>" (MJ:NoteZone)
 	db.prices = db.prices or {}   -- [MJ.AHKey()] = { [itemID in the journal] = { p = copper per unit, t = seen } }
 	db.ahScans = db.ahScans or {} -- [MJ.AHKey()] = time of the last full auction house scan
 	db.log = db.log or {}
@@ -382,10 +384,12 @@ function MJ:PruneRecent()
 end
 
 function MJ:ResetAll()
-	-- settings, window state and auction prices are not journal data
-	local settings, ui, prices, scans = self.db.settings, self.db.ui, self.db.prices, self.db.ahScans
+	-- settings, window state, auction prices and where zones are are not journal data
+	local db = self.db
+	local settings, ui, prices, scans, zoneGroups = db.settings, db.ui, db.prices, db.ahScans, db.zoneGroups
 	wipe(MJurnalDB)
 	MJurnalDB.settings, MJurnalDB.ui, MJurnalDB.prices, MJurnalDB.ahScans = settings, ui, prices, scans
+	MJurnalDB.zoneGroups = zoneGroups
 	self:InitDB()
 	self:Changed()
 end

@@ -365,26 +365,59 @@ function UI.ZoneLabel(zone)
 	return zone or "Zone: All"
 end
 
--- Zones of the current tab; counts follow the category filter so both menus match the list.
+-- Zone groups folded in the zone menu (kept between sessions): [group] = true
+local function foldedGroups()
+	MJ.db.ui.zoneFolded = MJ.db.ui.zoneFolded or {}
+	return MJ.db.ui.zoneFolded
+end
+
+-- Zones of the current tab, grouped: continents (Eastern Kingdoms, Kalimdor...), Dungeons, Raids,
+-- Battlegrounds, Other. Each group folds in and out; a folded group still shows the current pick.
+-- Counts follow the category filter so both menus match the list.
 local function zoneMenu()
 	local tab = UI.state.tab
 	local current = UI.state.zone[tab]
+	local folded = foldedGroups()
 	local function pick(zone)
 		return function()
 			UI.state.zone[tab] = zone
 			UI:Reload()
 		end
 	end
+	local zones = ZONES[tab]()
+	local groups, seen = {}, {}
+	for _, z in ipairs(zones) do
+		if not seen[z.group] then
+			seen[z.group] = true
+			groups[#groups + 1] = z.group
+		end
+	end
 	local entries = {
 		{ text = "All zones", checked = current == nil, onClick = pick(nil) },
-		{ separator = true },
-		{ text = tab == TAB_MONSTERS and "Where it was killed" or "Where it was looted", title = true },
 	}
-	for _, z in ipairs(ZONES[tab]()) do
-		entries[#entries + 1] = {
-			text = z.zone .. UI.Grey("  " .. MJ.Num(z.count)),
-			checked = current == z.zone, onClick = pick(z.zone),
-		}
+	if #groups > 1 then
+		entries[#entries + 1] = { actions = {
+			{ text = "Expand all", onClick = function() wipe(folded) end },
+			{ text = "Collapse all", onClick = function() for _, g in ipairs(groups) do folded[g] = true end end },
+		} }
+	end
+	local lastGroup
+	for _, z in ipairs(zones) do
+		local group = z.group
+		if group ~= lastGroup then
+			entries[#entries + 1] = { separator = true }
+			entries[#entries + 1] = {
+				text = St.ZoneGroupLabel(group), title = true,
+				toggle = { expanded = not folded[group], onClick = function() folded[group] = not folded[group] or nil end },
+			}
+			lastGroup = group
+		end
+		if not folded[group] or current == z.zone then
+			entries[#entries + 1] = {
+				text = z.zone .. UI.Grey("  " .. MJ.Num(z.count)), indent = 8,
+				checked = current == z.zone, onClick = pick(z.zone),
+			}
+		end
 	end
 	return entries
 end

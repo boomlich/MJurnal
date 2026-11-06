@@ -9,6 +9,39 @@ function MJ.ZoneInfo()
 	return zone or "", sub or ""
 end
 
+-- What kind of place you are in: "dungeon", "raid", "pvp" (battlegrounds, arenas) or
+-- "c:<continent>" in the open world; nil when it can't be told.
+function MJ.CurrentZoneGroup()
+	if GetInstanceInfo then
+		local ok, _, instanceType = pcall(GetInstanceInfo)
+		instanceType = ok and S(instanceType)
+		if instanceType == "party" then return "dungeon" end
+		if instanceType == "raid" then return "raid" end
+		if instanceType == "pvp" or instanceType == "arena" then return "pvp" end
+	end
+	local UIMap = C_Map and C_Map.GetBestMapForUnit and C_Map.GetMapInfo and Enum and Enum.UIMapType
+	if not UIMap then return nil end
+	local ok, mapID = pcall(C_Map.GetBestMapForUnit, "player")
+	mapID = ok and S(mapID)
+	-- walk up the map tree to the continent
+	for _ = 1, 10 do
+		if not mapID or mapID == 0 then return nil end
+		local okInfo, info = pcall(C_Map.GetMapInfo, mapID)
+		if not okInfo or type(info) ~= "table" then return nil end
+		local mapType, name = S(info.mapType), S(info.name)
+		if mapType == UIMap.Continent then return name and ("c:" .. name) or nil end
+		if mapType ~= nil and mapType < UIMap.Continent then return nil end
+		mapID = S(info.parentMapID)
+	end
+end
+
+-- Remembers which group (continent, dungeon, raid...) a zone belongs to, from where you are now.
+function MJ:NoteZone(zone)
+	if not zone or zone == "" then return end
+	local group = MJ.CurrentZoneGroup()
+	if group then self.db.zoneGroups[zone] = group end
+end
+
 ---------------------------------------------------------------------------
 -- NPC entries
 ---------------------------------------------------------------------------
@@ -118,6 +151,7 @@ function MJ:RecordKill(guid, npcId, info)
 
 	-- where
 	local zone, sub = MJ.ZoneInfo()
+	self:NoteZone(zone)
 	if zone ~= "" then
 		local z = s.zones[zone]
 		if not z then
@@ -492,6 +526,7 @@ local function isPlaceholder(name)
 end
 
 function MJ:RecordNode(kind, key, name, src, zone)
+	self:NoteZone(zone)
 	zone = zone ~= "" and zone or "Unknown"
 	local names = self.db.nodeNames
 	if name and isPlaceholder(names[key]) and not (isPlaceholder(name) and names[key]) then names[key] = name end

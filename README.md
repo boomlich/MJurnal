@@ -56,7 +56,7 @@ The journal works both ways:
 ### Characters & categories
 - **Character filter** (top right of the journal): show every character, one character or any mix of them. Lists, monster and item pages, the overview and the history all follow it; tooltips and chat alerts always use the whole account.
 - **Categories** next to the search box: monsters by creature type (Beast, Humanoid...) or classification (Elite, Rare...), loot by item type (Weapon, Trade Goods...) and subtype (Armor: Cloth / Leather / Mail / Plate, Weapon: One-Handed Swords, Staves...) or quest items. Subtypes fold out under their type with the +/- button, or all at once with *Expand all* / *Collapse all*. "All" shows the full list as before.
-- **Zone filter** next to the categories, for monsters (where they were killed) and gathering sources (where they were looted). It combines with the category, e.g. Beasts in Westfall, and each menu counts what the other one leaves
+- **Zone filter** next to the categories, for monsters (where they were killed) and gathering sources (where they were looted). It combines with the category, e.g. Beasts in Westfall, and each menu counts what the other one leaves. Zones are grouped by **Eastern Kingdoms, Kalimdor, Dungeons, Raids** (and Battlegrounds), every dungeon and raid is a zone of its own, and the groups fold in and out (or all at once with *Expand all* / *Collapse all*). Where you kill or loot, MJurnal notes what kind of place it is; zones from before are looked up in the game's map data (the classic raids are known by name until you are there again)
 
 ### Convenience
 - Search and sorting in both journals, with click-through between monsters and items
