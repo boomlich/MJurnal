@@ -18,6 +18,7 @@ end
 local processed = {}     -- [sessionID] = true
 local fightKills = {}    -- [npcId] = kills since the last processed fight
 local fightNames = {}    -- [name] = npcId seen since the last processed fight
+local NO_KILLS = {}
 
 MJ:Listen("KILL", function(npcId, name)
 	fightKills[npcId] = (fightKills[npcId] or 0) + 1
@@ -31,17 +32,7 @@ local function sessions()
 end
 
 local function nameToNPC(name)
-	if not name then return nil end
-	if fightNames[name] then return fightNames[name] end
-	for _, e in pairs(MJ.engaged) do
-		if e.name == name then return e.npc end
-	end
-	for id, m in pairs(MJ.meta) do
-		if m.name == name then return id end
-	end
-	for id, n in pairs(MJ.db.npcs) do
-		if n.name == name then return id end
-	end
+	return (name and fightNames[name]) or MJ.NPCIdByName(name)
 end
 
 local function sourceDetails(sessionID, meterType, guid, creatureID)
@@ -50,8 +41,9 @@ local function sourceDetails(sessionID, meterType, guid, creatureID)
 	if ok and type(det) == "table" then return det end
 end
 
+-- kills = [npcId] = kills to credit to this session (only the newest session gets them).
 -- Returns false when the data is still secret (try again later).
-local function readSession(sessionID)
+local function readSession(sessionID, kills)
 	local ok, enemy = pcall(DM.GetCombatSessionFromID, sessionID, T.EnemyDamageTaken)
 	if not ok then return true end
 	local result = {}   -- [npcId] = { done, mine, taken, spells = { [spellID] = amount } }
@@ -114,16 +106,16 @@ local function readSession(sessionID)
 	local any = false
 	for npcId, r in pairs(result) do
 		local n = MJ.db.npcs[npcId]
-		local kills = fightKills[npcId] or 0
-		if n or kills > 0 then
+		local k = kills[npcId] or 0
+		if n or k > 0 then
 			n = n or MJ:GetNPC(npcId, true)
 			n.dmgFights = (n.dmgFights or 0) + 1
 			n.dmgDone = (n.dmgDone or 0) + r.done
 			n.dmgMine = (n.dmgMine or 0) + r.mine
 			n.dmgTaken = (n.dmgTaken or 0) + r.taken
-			if kills > 0 then
+			if k > 0 then
 				-- only fights where it died count towards "damage per kill" (~ its health)
-				n.dmgKills = (n.dmgKills or 0) + kills
+				n.dmgKills = (n.dmgKills or 0) + k
 				n.dmgKillDone = (n.dmgKillDone or 0) + r.done
 				n.dmgKillTaken = (n.dmgKillTaken or 0) + r.taken
 			end
@@ -154,17 +146,21 @@ local tries = 0
 local function processAll()
 	if not MJ.db then return end
 	if InCombatLockdown() or UnitAffectingCombat("player") then return end
-	local list = sessions()
+	local todo = {}
+	for _, s in ipairs(sessions()) do
+		local id = S(s.sessionID)
+		if id and not processed[id] then todo[#todo + 1] = id end
+	end
+	table.sort(todo)
+	-- The kills seen since the last run belong to the newest fight. Crediting them to every
+	-- unread session would count each kill once per session.
 	local pending = false
-	for i = 1, #list do
-		local id = S(list[i].sessionID)
-		if id and not processed[id] then
-			if readSession(id) then
-				processed[id] = true
-			else
-				pending = true
-				break
-			end
+	for i, id in ipairs(todo) do
+		if readSession(id, i == #todo and fightKills or NO_KILLS) then
+			processed[id] = true
+		else
+			pending = true
+			break
 		end
 	end
 	if pending and tries < 8 then

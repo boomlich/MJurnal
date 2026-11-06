@@ -4,7 +4,9 @@ _G.MJurnal = MJ
 MJ.name = ADDON
 MJ.UI = {}
 MJ.Stats = {}
-MJ.unavailable = {}
+
+-- Journal tabs (also the index of each view in MJ.UI.views)
+MJ.UI.TAB_OVERVIEW, MJ.UI.TAB_MONSTERS, MJ.UI.TAB_LOOT, MJ.UI.TAB_HISTORY = 1, 2, 3, 4
 
 local floor, format, tonumber, type = math.floor, string.format, tonumber, type
 
@@ -57,8 +59,8 @@ local handlers = {}
 function MJ:On(event, fn)
 	if not handlers[event] then
 		handlers[event] = {}
-		local ok = pcall(eventFrame.RegisterEvent, eventFrame, event)
-		if not ok then MJ.unavailable[event] = true end
+		-- events this client does not have are skipped instead of raising an error
+		pcall(eventFrame.RegisterEvent, eventFrame, event)
 	end
 	handlers[event][#handlers[event] + 1] = fn
 end
@@ -309,6 +311,12 @@ function MJ:ItemIcon(itemId)
 	return (g and g.icon) or (GetItemIconByID and GetItemIconByID(itemId)) or 134400
 end
 
+function MJ.SpellName(spellID)
+	if not spellID then return nil end
+	if C_Spell and C_Spell.GetSpellName then return C_Spell.GetSpellName(spellID) end
+	if GetSpellInfo then return (GetSpellInfo(spellID)) end
+end
+
 local function OnItemData(itemId, success)
 	if not MJ.db or not MJ.pendingItems or not MJ.pendingItems[itemId] then return end
 	MJ.pendingItems[itemId] = nil
@@ -532,11 +540,11 @@ SlashCmdList.MJURNAL = function(msg)
 	elseif cmd == "options" or cmd == "config" or cmd == "settings" then
 		MJ.UI:OpenSettings()
 	elseif cmd == "overview" then
-		MJ.UI:Open(1)
+		MJ.UI:Open(MJ.UI.TAB_OVERVIEW)
 	elseif cmd == "history" then
-		MJ.UI:Open(4)
+		MJ.UI:Open(MJ.UI.TAB_HISTORY)
 	elseif cmd == "loot" then
-		MJ.UI:Search(3, rest)
+		MJ.UI:Search(MJ.UI.TAB_LOOT, rest)
 	elseif cmd == "session" then
 		local s = MJ.session
 		local hours = max((time() - s.start) / 3600, 1 / 60)
@@ -544,7 +552,7 @@ SlashCmdList.MJURNAL = function(msg)
 			MJ.Dur(time() - s.start), MJ.Num(s.kills or 0), MJ.Num((s.kills or 0) / hours),
 			MJ.Num(s.corpses or 0), MJ.Money(s.money or 0), MJ.Money(s.vendor or 0), MJ.Num(s.xp or 0)))
 	else
-		MJ.UI:Search(2, msg)
+		MJ.UI:Search(MJ.UI.TAB_MONSTERS, msg)
 	end
 end
 
@@ -571,7 +579,7 @@ function MJurnal_OpenMouseover()
 		return
 	end
 	if MJ.db.npcs[npcId] then
-		MJ.UI:Open(2, npcId)
+		MJ.UI:Open(MJ.UI.TAB_MONSTERS, npcId)
 	else
 		local name = S(UnitName(unit)) or MJ:NPCName(npcId)
 		MJ:Print(format("No journal data for %s yet - kill or loot one first.", name))

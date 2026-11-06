@@ -7,7 +7,7 @@ local OPTIONS = {
 	{ "fadeMoving", "Fade the journal while moving (fully visible while the mouse is over it)" },
 	{ "unitTooltip", "Show MJurnal line on NPC tooltips" },
 	{ "itemTooltip", "Show MJurnal line on item tooltips" },
-	{ "dropAlerts", "Chat alert on rare drops (rate at or below 5%, or epic+)" },
+	{ "dropAlerts", "Chat alert on rare drops (rate at or below %s, or epic+)" },
 	{ "milestones", "Chat message on kill milestones" },
 	{ "newEntries", "Chat message on new monsters and first-time uncommon+ loot" },
 	{ "rareAlerts", "Chat message when a rare monster is spotted" },
@@ -37,7 +37,8 @@ local function build()
 			label = cb:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
 			label:SetPoint("LEFT", cb, "RIGHT", 4, 0)
 		end
-		label:SetText(opt[2])
+		-- "%s" in a label is the current rare-drop threshold
+		label:SetText(opt[2]:format(("%g%%"):format(MJ.db.settings.alertRate * 100)))
 		cb.key = opt[1]
 		cb:SetScript("OnClick", function(s)
 			MJ.db.settings[s.key] = s:GetChecked() and true or false

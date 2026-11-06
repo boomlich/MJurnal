@@ -11,21 +11,23 @@ UI.GATHER_LABEL = GATHER_LABEL
 -- loot table sorting (one state per table): column index -> value getter
 local lootSort = { col = 4, desc = true }
 local questSort = { col = 4, desc = true }
+-- "1 in" and "50%/90%" both grow with 1 / rate, so they sort on that (not on the rate itself)
+local function oneIn(r) return r.p > 0 and 1 / r.p or math.huge end
 local SORT_GETTERS = {
 	[1] = function(r) return r.name end,
 	[2] = function(r) return r.d end,
 	[3] = function(r) return r.qOrQty end,
 	[4] = function(r) return r.p end,
-	[5] = function(r) return r.p end,
+	[5] = oneIn,
 	[6] = function(r) return r.since end,
-	[7] = function(r) return r.p end,
+	[7] = oneIn,
 	[8] = function(r) return r.dry end,
 	[9] = function(r) return r.last end,
 }
 
 local function confirmDelete(npcId)
 	StaticPopupDialogs.MJURNAL_DELETE_NPC = StaticPopupDialogs.MJURNAL_DELETE_NPC or {
-		text = "Delete all journal data for %s?",
+		text = "Delete the journal entry for %s?\n\nIts kills, loot and stats are removed. Account totals, daily counts and the history log keep counting it.",
 		button1 = YES or "Yes",
 		button2 = NO or "No",
 		OnAccept = function(_, data)
@@ -136,7 +138,7 @@ local function renderLootTable(c, npcId, n, quest)
 				if IsModifiedClick("CHATLINK") and g and g.link then
 					UI.InsertLink(g.link)
 				else
-					UI:Navigate(UI.TAB_LOOT, r.itemId)
+					UI:Open(UI.TAB_LOOT, r.itemId)
 				end
 			end,
 		}
@@ -199,7 +201,7 @@ local function renderGather(c, n)
 				icon = MJ:ItemIcon(itemId),
 				cells = { MJ:ItemText(itemId), Num(it.drops), Num(it.qty), UI.RateText(p, gk.count), UI.OneIn(p), format("%.2f", it.qty / max(gk.count, 1)) },
 				onEnter = function(_, tt) tt:SetItemByID(itemId) end,
-				onClick = function() UI:Navigate(UI.TAB_LOOT, itemId) end,
+				onClick = function() UI:Open(UI.TAB_LOOT, itemId) end,
 			}
 		end
 		table.sort(rows, function(a, b) return a.sortv > b.sortv end)
@@ -352,7 +354,7 @@ function UI.views.monster(c, npcId)
 	c:Grid({
 		{ "Kills", Num(n.kills), "Mobs that died while you or your group had the tag." },
 		{ "Corpses looted", Num(n.looted) },
-		{ "Empty corpses", Num(n.empty), "Kills whose corpse had no loot at all (detected automatically). Counted in the drop-rate denominator." },
+		{ "Empty corpses", Num(n.empty), "Kills whose corpse had no loot at all (detected automatically; in a group only with free-for-all loot). Counted in the drop-rate denominator." },
 		{ "Not looted", Num(unresolved), "Kills you did not loot, or that someone else in the group had loot rights to. Not used for drop rates." },
 		{ "Loot rate", n.kills > 0 and Pct(n.looted / n.kills) or "-" },
 		{ "Corpses (rate base)", Num(corpses), "Looted + confirmed empty corpses. All drop rates use this number." },
@@ -498,4 +500,4 @@ function UI.views.monster(c, npcId)
 	c:Space(28)
 end
 
-UI.views[2] = UI.views.monster
+UI.views[UI.TAB_MONSTERS] = UI.views.monster

@@ -82,7 +82,7 @@ function UI.views.loot(c, itemId)
 				tt:AddDoubleLine("Last drop", s.it.lastT and MJ.Ago(s.it.lastT) or "-", 0.8, 0.8, 0.8, 1, 1, 1)
 				tt:AddLine("Click to open in the monster journal.", 0.5, 0.5, 0.5)
 			end,
-			onClick = function() UI:Navigate(UI.TAB_MONSTERS, s.npc) end,
+			onClick = function() UI:Open(UI.TAB_MONSTERS, s.npc) end,
 		}
 	end
 	c:Table({
@@ -97,7 +97,7 @@ function UI.views.loot(c, itemId)
 		for _, s in ipairs(gsources) do
 			grows[#grows + 1] = {
 				cells = { UI.NPCLabel(s.npc), UI.GATHER_LABEL[s.kind] or s.kind, Num(s.it.drops), Num(s.it.qty), Num(s.count), UI.RateText(s.rate, s.count) },
-				onClick = function() UI:Navigate(UI.TAB_MONSTERS, s.npc) end,
+				onClick = function() UI:Open(UI.TAB_MONSTERS, s.npc) end,
 			}
 		end
 		c:Table({ { "Monster", 190 }, { "Method", 90 }, { "Times", 50, "RIGHT" }, { "Qty", 50, "RIGHT" }, { "Attempts", 60, "RIGHT" }, { "Rate", 60, "RIGHT" } }, grows)
@@ -136,4 +136,4 @@ function UI.views.loot(c, itemId)
 	end
 end
 
-UI.views[3] = UI.views.loot
+UI.views[UI.TAB_LOOT] = UI.views.loot

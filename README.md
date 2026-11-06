@@ -86,7 +86,7 @@ WoW Forever runs with the Midnight addon restrictions: addons **cannot read the 
 
 ### Loot
 - Every loot window is split per corpse with `GetLootSourceInfo`, so AoE loot is attributed correctly. A corpse is only counted once.
-- Corpses with no loot are detected through `UNIT_LOOT`/`CanLootUnit` and counted as **empty corpses**.
+- Corpses with no loot are detected through `UNIT_LOOT`/`CanLootUnit` and counted as **empty corpses**. In a group this only happens with free-for-all loot: with other loot methods a corpse someone else has the rights to looks empty too, so unlooted corpses are left out instead.
 - **Drop rates are per corpse**: looted + confirmed empty. Kills you never looted don't dilute the numbers.
 
 ### Damage
@@ -120,7 +120,7 @@ World of Warcraft\_forever_\WTF\Account\<ACCOUNT>\SavedVariables\MJurnal.lua
 - The game writes the file on logout and `/reload`, so a crash loses data back to the last save.
 - The file is plain Lua text. Copy it to back up your journal.
 - Only raw counts are stored. Rates and probabilities are calculated when you open the journal.
-- The file grows with the number of different monsters and items, not with the number of kills.
+- The file grows mainly with the number of different monsters and items, not with the number of kills. Per-monster daily kill counts add a little per day played, and the history log keeps the latest ~5000 events.
 
 ## Project layout
 

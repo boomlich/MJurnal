@@ -372,7 +372,7 @@ end
 
 function UI.SpellLabel(spellID)
 	if not spellID or spellID == 0 or spellID == 6603 then return "Melee" end
-	local name = (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(spellID)) or (GetSpellInfo and GetSpellInfo(spellID))
+	local name = MJ.SpellName(spellID)
 	return name or ("Spell " .. spellID)
 end
 

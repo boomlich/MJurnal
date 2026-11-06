@@ -5,7 +5,7 @@ local UI, St = MJ.UI, MJ.Stats
 local W, H = 1080, 680
 local LIST_W = 290
 local TABS = { "Overview", "Monsters", "Loot", "History" }
-local TAB_OVERVIEW, TAB_MONSTERS, TAB_LOOT, TAB_HISTORY = 1, 2, 3, 4
+local TAB_OVERVIEW, TAB_MONSTERS, TAB_LOOT, TAB_HISTORY = UI.TAB_OVERVIEW, UI.TAB_MONSTERS, UI.TAB_LOOT, UI.TAB_HISTORY
 
 UI.views = {}
 UI.state = {
@@ -168,10 +168,6 @@ function UI:Select(id)
 		end)
 	end
 	self:RenderDetail(true)
-end
-
-function UI:Navigate(tab, id)
-	self:Open(tab, id)
 end
 
 ---------------------------------------------------------------------------
@@ -367,12 +363,14 @@ function UI:Build()
 		if SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_CLOSE then PlaySound(SOUNDKIT.IG_CHARACTER_INFO_CLOSE) end
 	end)
 
-	-- live refresh while open (throttled)
+	-- live refresh while open (throttled). The overview and the history rebuild a lot on every
+	-- render, so they refresh less often than the journals while you farm.
+	local REFRESH_DELAY = { [TAB_OVERVIEW] = 5, [TAB_HISTORY] = 3 }
 	local pending = false
 	MJ:Listen("DATA_CHANGED", function()
 		if not f:IsShown() or pending then return end
 		pending = true
-		C_Timer.After(0.75, function()
+		C_Timer.After(REFRESH_DELAY[UI.state.tab] or 0.75, function()
 			pending = false
 			if f:IsShown() then
 				UI:RefreshList(true)
@@ -414,16 +412,16 @@ end
 function UI:Search(tab, text)
 	if not MJ.db then return end
 	self:Build()
-	self.state.search[tab] = text or ""
-	local list = St[tab == TAB_MONSTERS and "MonsterList" or "ItemList"](text, "kills")
-	if tab == TAB_MONSTERS and #list == 0 and #St.ItemList(text, "drops") > 0 then
-		tab = TAB_LOOT
-		self.state.search[tab] = text or ""
-		list = St.ItemList(text, "drops")
+	text = text or ""
+	local list = tab == TAB_MONSTERS and St.MonsterList(text, "kills") or St.ItemList(text, "drops")
+	if tab == TAB_MONSTERS and #list == 0 then
+		-- no monster matches: fall back to the loot journal
+		local items = St.ItemList(text, "drops")
+		if #items > 0 then tab, list = TAB_LOOT, items end
 	end
+	self.state.search[tab] = text
 	self.state.selected[tab] = list[1] and list[1].id or nil
 	self.state.tab = tab
 	if self.frame:IsShown() then self:SelectTab(tab) else self.frame:Show() end
 end
 
-UI.TAB_OVERVIEW, UI.TAB_MONSTERS, UI.TAB_LOOT, UI.TAB_HISTORY = TAB_OVERVIEW, TAB_MONSTERS, TAB_LOOT, TAB_HISTORY

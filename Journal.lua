@@ -90,7 +90,6 @@ function MJ:RecordKill(guid, npcId, info)
 	else
 		n.soloKills = (n.soloKills or 0) + 1
 	end
-	if info.source == "loot" then n.lootDetected = (n.lootDetected or 0) + 1 end
 
 	-- where
 	local zone, sub = MJ.ZoneInfo()
@@ -175,13 +174,29 @@ end
 -- Corpse states in db.recent.kills: "pending" (outcome unknown), "empty" (no loot at all),
 -- "looted". Corpses with no loot count as "empty" so drop rates are per corpse.
 local function isOpen(r)
-	-- "other" was written by v1 (misread canLoot); treat it like pending
-	return r and (r.s == "pending" or r.s == "other")
+	return r and r.s == "pending"
+end
+
+-- "No loot" only means "empty" when the corpse was yours to loot. In a group someone else
+-- may have the loot rights (round robin, master loot...), and then it looks empty to you too.
+local function canJudgeEmpty()
+	if not IsInGroup() then return true end
+	local method
+	if C_PartyInfo and C_PartyInfo.GetLootMethod then
+		local ok, m = pcall(C_PartyInfo.GetLootMethod)
+		method = ok and S(m) or nil
+	elseif GetLootMethod then
+		local ok, m = pcall(GetLootMethod)
+		method = ok and S(m) or nil
+	end
+	if method == "freeforall" then return true end
+	local LM = Enum and Enum.LootMethod
+	return LM ~= nil and LM.Freeforall ~= nil and method == LM.Freeforall
 end
 
 function MJ:MarkEmpty(guid, why)
 	local r = self.db.recent.kills[guid]
-	if not isOpen(r) or not r.n then return end
+	if not isOpen(r) or not r.n or not canJudgeEmpty() then return end
 	r.s = "empty"
 	local n = self.db.npcs[r.n]
 	if n then
@@ -254,11 +269,6 @@ function MJ:RecordCorpseLoot(guid, npcId, src)
 	recentLoot[guid] = time()
 
 	local r = self.db.recent.kills[guid]
-	if r and r.n == nil then
-		-- half-written kill from v1 (see RecordKill guard): redo it properly
-		self.db.recent.kills[guid] = nil
-		r = nil
-	end
 	if not r then
 		self:RecordKill(guid, npcId, { source = "loot", name = src.name, level = src.level })
 		r = self.db.recent.kills[guid]

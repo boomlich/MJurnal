@@ -8,7 +8,7 @@ local format, max = string.format, math.max
 local function npcRow(npcId, cells)
 	return {
 		cells = cells,
-		onClick = function() UI:Navigate(UI.TAB_MONSTERS, npcId) end,
+		onClick = function() UI:Open(UI.TAB_MONSTERS, npcId) end,
 	}
 end
 
@@ -17,7 +17,7 @@ local function dropRow(d, extra)
 		icon = MJ:ItemIcon(d.item),
 		cells = { MJ:ItemText(d.item), UI.NPCLabel(d.npc), extra[1], extra[2] },
 		onEnter = function(_, tt) tt:SetItemByID(d.item) end,
-		onClick = function() UI:Navigate(UI.TAB_LOOT, d.item) end,
+		onClick = function() UI:Open(UI.TAB_LOOT, d.item) end,
 	}
 end
 
@@ -44,7 +44,7 @@ function UI.views.overview(c)
 
 	c:Section("Totals")
 	c:Grid({
-		{ "Kills", Num(G.kills) },
+		{ "Kills", Num(T.kills or 0) },
 		{ "Monsters discovered", Num(G.npcCount) },
 		{ "Items discovered", Num(G.itemCount) },
 		{ "Corpses looted", Num(G.looted) },
@@ -161,7 +161,7 @@ function UI.views.overview(c)
 			rows[#rows + 1] = {
 				cells = { MJ.Date(e.t), UI.DeathKiller(e), UI.DeathCause(e), e.adds and Num(e.adds) or "-", e.z or "-", MJ:CharName(e.c) },
 				onEnter = function(_, tt) UI.DeathTooltip(tt, e) end,
-				onClick = function() if e.npc and db.npcs[e.npc] then UI:Navigate(UI.TAB_MONSTERS, e.npc) end end,
+				onClick = function() if e.npc and db.npcs[e.npc] then UI:Open(UI.TAB_MONSTERS, e.npc) end end,
 			}
 		end
 		c:Table({ { "When", 110 }, { "Killed by", 190 }, { "Killing blow", 230 }, { "Enemies", 54, "RIGHT" }, { "Zone", 150 }, { "Character", 90 } }, rows)
@@ -303,4 +303,4 @@ function UI.views.overview(c)
 	end
 end
 
-UI.views[1] = UI.views.overview
+UI.views[UI.TAB_OVERVIEW] = UI.views.overview

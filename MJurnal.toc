@@ -2,6 +2,8 @@
 ## Title: |cffd4a017MJurnal|r
 ## Notes: Personal monster & loot journal. Every kill, every drop, every number - based only on what you have seen yourself.
 ## Version: 0.1.0
+## Author: Thomas Matre
+## X-Website: https://github.com/boomlich/MJurnal
 ## SavedVariables: MJurnalDB
 ## IconTexture: Interface\Icons\INV_Misc_Book_09
 ## AddonCompartmentFunc: MJurnal_OnAddonCompartmentClick

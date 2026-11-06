@@ -20,7 +20,6 @@ local RARE = { rare = true, rareelite = true }
 local scanTokens = { "target", "focus", "mouseover", "softenemy", "pettarget" }
 for i = 1, 40 do scanTokens[#scanTokens + 1] = "nameplate" .. i end
 for i = 1, 4 do scanTokens[#scanTokens + 1] = "party" .. i .. "target" end
-MJ.scanTokens = scanTokens
 
 local function Exists(u)
 	return S(UnitExists(u)) and true or false
@@ -28,6 +27,9 @@ end
 
 local function CaptureMeta(unit, npcId)
 	local m = MJ.meta[npcId]
+	-- name and classification never change for an npc id; this runs on every UNIT_HEALTH,
+	-- so read the unit only until we have them
+	if m and m.name and m.class then return m end
 	if not m then
 		m = {}
 		MJ.meta[npcId] = m
@@ -102,7 +104,8 @@ local function CheckUnit(unit, live)
 	if not S(UnitCanAttack("player", unit)) then return end
 	local m = CaptureMeta(unit, npcId)
 	local now = GetTime()
-	if S(UnitAffectingCombat(unit)) and S(UnitIsTapDenied(unit)) == false and EngagedWithGroup(unit) then
+	-- once engaged, it stays engaged for as long as it is in combat and not tapped by others
+	if S(UnitAffectingCombat(unit)) and S(UnitIsTapDenied(unit)) == false and (e or EngagedWithGroup(unit)) then
 		if not e then
 			e = { npc = npcId, start = now, name = m.name }
 			engaged[guid] = e

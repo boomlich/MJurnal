@@ -74,9 +74,9 @@ function UI.views.history(c)
 						or (e.k == "death" and function(_, tt) UI.DeathTooltip(tt, e) end) or nil,
 					onClick = function()
 						if e.item then
-							UI:Navigate(UI.TAB_LOOT, e.item)
+							UI:Open(UI.TAB_LOOT, e.item)
 						elseif e.npc and MJ.db.npcs[e.npc] then
-							UI:Navigate(UI.TAB_MONSTERS, e.npc)
+							UI:Open(UI.TAB_MONSTERS, e.npc)
 						end
 					end,
 				}
@@ -94,4 +94,4 @@ function UI.views.history(c)
 	end
 end
 
-UI.views[4] = UI.views.history
+UI.views[UI.TAB_HISTORY] = UI.views.history
