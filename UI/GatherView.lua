@@ -41,6 +41,7 @@ local function itemTooltip(tt, nd, itemId, it)
 		line("Looted", Num(it.drops) .. " times")
 	end
 	line("Total quantity", Num(it.qty))
+	UI.AddAHLines(tt, itemId, nd.count and nd.count > 0 and it.qty / nd.count, "AH value per loot")
 	if it.sMin then line("Per loot min / avg / max", format("%d / %.2f / %d", it.sMin, it.qty / max(it.drops, 1), it.sMax)) end
 	local stacks = St.StackText(it)
 	if stacks then line("Amounts", stacks) end
@@ -115,6 +116,7 @@ function UI.views.gather(c, key)
 	for _, it in pairs(nd.items) do qty = qty + it.qty end
 	local count = nd.count
 	local per = St.NodeValuePer(nd)
+	local ahValue, ahPriced, ahTotal = St.AHValue(nd.items)
 	c:Section("Summary")
 	c:Grid({
 		{ nd.kind == "fishing" and "Catches" or "Times looted", count and Num(count) or "-" },
@@ -124,6 +126,12 @@ function UI.views.gather(c, key)
 		{ "Money", Money(nd.money) },
 		{ "Vendor value", Money(St.NodeVendor(nd)), "Sum of vendor sell price x quantity for everything it gave." },
 		{ "Value per loot", per and Money(per) or "-", "Money + vendor value per loot. Use it to compare sources." },
+		{ "AH value", ahPriced > 0 and Money(ahValue) or "-", function(tt)
+			tt:AddLine(("Everything it gave at today's auction price. %d of %d items have a price."):format(ahPriced, ahTotal), nil, nil, nil, true)
+			tt:AddLine(UI.AH_NOTE, 0.7, 0.7, 0.7, true)
+		end },
+		{ "Value per loot (AH)", ahPriced > 0 and count and count > 0 and Money((nd.money + St.MarketValue(nd.items)) / count) or "-",
+			"Money + items at their auction price (vendor price for items without one), per loot." },
 		{ "First", nd.first and MJ.Date(nd.first.t) or "-" },
 		{ "Last", nd.last and MJ.Ago(nd.last.t) or "-", nd.last and MJ.Date(nd.last.t) },
 	}, 3)

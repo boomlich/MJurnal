@@ -31,6 +31,8 @@ function UI.views.loot(c, itemId)
 	local sub = { MJ.QualityHex(g.quality) .. MJ.QualityName(g.quality) .. "|r" }
 	if g.itype then sub[#sub + 1] = g.itype .. ((g.isub and g.isub ~= g.itype) and (" / " .. g.isub) or "") end
 	if g.sell and g.sell > 0 then sub[#sub + 1] = "Sells for " .. Money(g.sell) end
+	local ahPrice = St.AHPrice(itemId)
+	if ahPrice then sub[#sub + 1] = "AH " .. UI.AHPriceText(itemId) end
 	if g.quest then sub[#sub + 1] = "|cffff8020Quest item|r" end
 	sub[#sub + 1] = Grey("ID " .. itemId)
 	c:Title(MJ.QualityHex(g.quality) .. (g.name or ("Item #" .. itemId)) .. "|r", table.concat(sub, "  ·  "), MJ:ItemIcon(itemId),
@@ -47,6 +49,8 @@ function UI.views.loot(c, itemId)
 		{ "Total quantity", Num(g.qty) },
 		{ "Avg per loot", format("%.2f", g.qty / max(g.drops, 1)), "Average quantity each time it was looted (several units from one corpse count as one loot)." },
 		{ "Vendor value earned", Money((g.sell or 0) * g.qty) },
+		{ "AH price", UI.AHPriceText(itemId), UI.AH_NOTE },
+		{ "AH value of loot", ahPrice and Money(ahPrice * g.qty) or "-", "Everything you looted of it at today's auction price." },
 		{ "Monsters that drop it", Num(#sources) },
 		{ "Best source", best and (MJ:NPCName(best.npc) .. " (" .. Pct(best.rate) .. ")") or "-" },
 		{ "Luck", luck and format("%.2fx", luck) or "-", luck and format("Across %d measured drops. Above 1x = it came sooner than the rate predicted.", luckN) or nil },

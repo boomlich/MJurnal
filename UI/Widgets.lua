@@ -607,6 +607,25 @@ function UI.InsertLink(link)
 	if open then open(link) end
 end
 
+-- Auction prices (shown next to vendor values)
+local AH_NOTE = "Lowest buyout per unit on your realm and faction's auction house. Scan with the MJurnal button under the auction house; your own searches there update it too."
+UI.AH_NOTE = AH_NOTE
+
+-- "1g 20s (2h ago)" for mult units of an item, or a grey "-" without an auction price.
+function UI.AHPriceText(itemId, mult)
+	local p, t = MJ.Stats.AHPrice(itemId)
+	if not p then return UI.Grey("-") end
+	return MJ.Money(p * (mult or 1)) .. UI.Grey(" (" .. MJ.Ago(t) .. ")")
+end
+
+-- Tooltip lines: the auction price, and its value per corpse / loot when perLabel is given.
+function UI.AddAHLines(tt, itemId, per, perLabel)
+	local p, t = MJ.Stats.AHPrice(itemId)
+	if not p then return end
+	tt:AddDoubleLine("AH price", MJ.Money(p) .. UI.Grey("  " .. MJ.Ago(t)), 0.8, 0.8, 0.8, 1, 1, 1)
+	if per and perLabel then tt:AddDoubleLine(perLabel, MJ.Money(p * per), 0.8, 0.8, 0.8, 1, 1, 1) end
+end
+
 function UI.OneIn(p)
 	if not p or p <= 0 then return "-" end
 	local v = 1 / p

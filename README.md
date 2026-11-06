@@ -34,6 +34,12 @@ The journal works both ways:
 - Every source monster with its own rate, plus every gathering source (herb and mining nodes, chests, containers, fishing zones)
 - First and last time looted (when, which character, from what)
 
+### Auction house prices
+- Next to every vendor value MJurnal can show what the loot is worth on the **auction house**: the item page (AH price, AH value of what you looted), monsters (AH value of the items, per corpse, gold + AH value per corpse), gathering sources (AH value, per loot), the overview (AH value of all loot, best farms and sources by AH value), the loot list (sort by *AH value*) and item tooltips
+- Prices are the lowest buyout per unit on your realm and faction's auction house. Press **MJurnal scan** under the auction house for a full scan (the server allows one about every 15 minutes), or turn on the automatic scan in the settings. Prices from your own searches on the auction house are picked up as you browse
+- Only items in your journal get a price, so the saved file stays small. An item you loot for the first time gets its price with the next scan, or when you search for it
+- Every value in the journal is still calculated with vendor prices; the auction value is shown beside it. Items without an auction price (soulbound, never listed) only have their vendor value
+
 ### Gathering
 - Its own tab for loot that does not come from monsters: **herb nodes, mining nodes, chests and other objects, opened containers and fishing** (one source per zone)
 - Every source has its own loot table: times looted, quantity, per loot, drop rate and 1 in X, plus money, vendor value and value per loot, zones and characters
@@ -78,6 +84,7 @@ The journal works both ways:
 | Search loot | `/mj loot <text>` |
 | Overview / gathering / history tab | `/mj overview`, `/mj gathering`, `/mj history` |
 | This session's numbers in chat | `/mj session` |
+| Scan auction house prices | *MJurnal scan* under the auction house, or `/mj scan` there |
 | Settings | Right-click the minimap button, the gear in the journal, or `/mj options` |
 | All commands | `/mj help` |
 
@@ -100,6 +107,11 @@ WoW Forever runs with the Midnight addon restrictions: addons **cannot read the 
 - Corpses with no loot are detected through `UNIT_LOOT`/`CanLootUnit` and counted as **empty corpses**. In a group this only happens with free-for-all loot: with other loot methods a corpse someone else has the rights to looks empty too, so unlooted corpses are left out instead.
 - **Drop rates are per corpse**: looted + confirmed empty. Kills you never looted don't dilute the numbers.
 - The drop rate is the chance that a corpse has the item at all. When a corpse drops several (a stack of 3, or the same item in two slots), every unit counts towards the quantity and the **per corpse** average.
+
+### Auction prices
+- Full scans use `C_AuctionHouse.ReplicateItems`, read a few hundred auctions per frame so a big auction house doesn't freeze the game.
+- Your own searches are read from the browse, commodity and item search results.
+- Prices are stored per realm and faction; the journal shows the ones for the character you are playing.
 
 ### Damage
 - Damage comes from Blizzard's built-in damage meter API (`C_DamageMeter`), the same source Details! uses on Forever.
@@ -152,6 +164,7 @@ Tracker/Units.lua      Kill detection from unit tokens, player deaths
 Tracker/Loot.lua       Loot window parsing, gathering, pick pocket, fishing
 Tracker/Progress.lua   XP and reputation from chat messages
 Tracker/Damage.lua     Damage per monster type from C_DamageMeter
+Tracker/Auction.lua    Auction house prices (full scan and your own searches)
 UI/                    Journal window, views, widgets, settings, minimap button
 ```
 

@@ -99,6 +99,8 @@ local function itemLine(tooltip, itemId)
 	local text = format("Looted %sx", MJ.Num(g.drops))
 	local best = St.ItemSources(itemId, V)[1]
 	if best then text = text .. format(" · best: %s (%s)", MJ:NPCName(best.npc), MJ.Pct(best.rate)) end
+	local ah = St.AHPrice(itemId)
+	if ah then text = text .. " · AH " .. MJ.Money(ah) end
 	tooltip:AddLine(PREFIX .. text, 1, 1, 1)
 end
 

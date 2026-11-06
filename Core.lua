@@ -125,6 +125,7 @@ local DEFAULT_SETTINGS = {
 	fadeAlpha = 0.35,     -- journal opacity while faded (moving or in combat)
 	logQuality = 2,       -- log drops of this quality or better (2 = uncommon)
 	alertRate = 0.05,     -- drops with a rate at or below this are "rare drops"
+	ahAutoScan = false,   -- full auction house scan when you open the auction house
 	debug = false,
 }
 
@@ -136,6 +137,7 @@ local DEFAULT_SETTINGS = {
 --                       nodes[key] = loot from one gathering source (see MJ:RecordNode)
 --   db.nodeNames[key] = the name of a gathering source
 --   db.totals, db.streak = account-wide counters (milestones, launcher tooltip)
+--   db.prices[realm:faction][itemID] = auction house price (Tracker/Auction.lua)
 -- Views combine the ch buckets of the characters you selected (see Stats.lua).
 ---------------------------------------------------------------------------
 local DB_VERSION = 6
@@ -165,6 +167,8 @@ function MJ:InitDB()
 	db.totals = db.totals or {}
 	db.rares = db.rares or {}
 	db.nodeNames = db.nodeNames or {}
+	db.prices = db.prices or {}   -- [MJ.AHKey()] = { [itemID in the journal] = { p = copper per unit, t = seen } }
+	db.ahScans = db.ahScans or {} -- [MJ.AHKey()] = time of the last full auction house scan
 	db.log = db.log or {}
 	db.recent = db.recent or {}
 	db.recent.kills = db.recent.kills or {}
@@ -378,9 +382,10 @@ function MJ:PruneRecent()
 end
 
 function MJ:ResetAll()
-	local settings, ui = self.db.settings, self.db.ui
+	-- settings, window state and auction prices are not journal data
+	local settings, ui, prices, scans = self.db.settings, self.db.ui, self.db.prices, self.db.ahScans
 	wipe(MJurnalDB)
-	MJurnalDB.settings, MJurnalDB.ui = settings, ui
+	MJurnalDB.settings, MJurnalDB.ui, MJurnalDB.prices, MJurnalDB.ahScans = settings, ui, prices, scans
 	self:InitDB()
 	self:Changed()
 end
@@ -567,6 +572,13 @@ function MJ:NPCName(npcId)
 	return (n and n.name) or (self.meta and self.meta[npcId] and self.meta[npcId].name) or ("NPC #" .. tostring(npcId))
 end
 
+-- Auction houses are per realm and faction: "Realm:Alliance".
+function MJ.AHKey()
+	local realm = (MJ.charKey or "?"):match("%-(.+)$") or "?"
+	local faction = UnitFactionGroup and MJ.S(UnitFactionGroup("player"))
+	return realm .. ":" .. (faction or "?")
+end
+
 function MJ:CharName(key)
 	if not key then return "-" end
 	local c = self.db.chars[key]
@@ -669,6 +681,7 @@ SlashCmdList.MJURNAL = function(msg)
 		MJ:Print("/mj session - print this session's numbers")
 		MJ:Print("/mj tooltip | itemtooltip | questtooltip | alerts | milestones | minimap | fade | combatfade - toggle features")
 		MJ:Print("/mj fade <percent> - opacity while moving or in combat, e.g. /mj fade 30")
+		MJ:Print("/mj scan - scan auction house prices (at the auction house)")
 		MJ:Print("/mj options - open settings")
 		MJ:Print("/mj debug - toggle detection debug messages")
 	elseif cmd == "debug" then
@@ -696,6 +709,8 @@ SlashCmdList.MJURNAL = function(msg)
 		end
 	elseif cmd == "combatfade" then
 		toggleSetting("fadeCombat", "Fade in combat")
+	elseif cmd == "scan" then
+		MJ:ScanAuctionHouse()
 	elseif cmd == "options" or cmd == "config" or cmd == "settings" then
 		MJ.UI:OpenSettings()
 	elseif cmd == "overview" then

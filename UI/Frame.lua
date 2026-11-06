@@ -128,8 +128,8 @@ local function LootElements()
 	local out = {}
 	for _, e in ipairs(St.ItemList(UI.state.search[TAB_LOOT], sortKey, UI.state.category[TAB_LOOT])) do
 		local count
-		if sortKey == "value" then
-			count = MJ.Money(e.v)
+		if sortKey == "value" or sortKey == "ah" then
+			count = e.v > 0 and MJ.Money(e.v) or UI.Grey("-")
 		elseif sortKey == "last" then
 			count = MJ.Ago(e.g.last and e.g.last.t)
 		else

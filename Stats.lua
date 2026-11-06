@@ -474,6 +474,44 @@ function St.ItemLuck(itemId, V)
 end
 
 ---------------------------------------------------------------------------
+-- Auction house prices (shown next to vendor values; see Tracker/Auction.lua)
+---------------------------------------------------------------------------
+-- Price of an item on your realm and faction's auction house: copper per unit, time seen.
+function St.AHPrice(itemId)
+	local prices = MJ.db.prices[MJ.AHKey()]
+	local e = prices and prices[itemId]
+	if e then return e.p, e.t end
+end
+
+-- AH value of { [itemId] = { qty } }: the total of the priced items, priced count, item count.
+function St.AHValue(items)
+	local v, priced, total = 0, 0, 0
+	for id, it in pairs(items) do
+		total = total + 1
+		local p = St.AHPrice(id)
+		if p then
+			v = v + p * it.qty
+			priced = priced + 1
+		end
+	end
+	return v, priced, total
+end
+
+-- Items valued at their AH price, or their vendor price when they have none.
+function St.MarketValue(items)
+	local v = 0
+	for id, it in pairs(items) do
+		local p = St.AHPrice(id)
+		if not p then
+			local g = MJ.db.items[id]
+			p = g and g.sell or 0
+		end
+		v = v + p * it.qty
+	end
+	return v
+end
+
+---------------------------------------------------------------------------
 -- Gathering sources (nd = a view node)
 ---------------------------------------------------------------------------
 -- Vendor value of everything a source gave.
@@ -732,6 +770,7 @@ St.LOOT_SORTS = {
 	{ key = "quality", label = "Quality" },
 	{ key = "last", label = "Recent" },
 	{ key = "value", label = "Value" },
+	{ key = "ah", label = "AH value" },
 }
 
 local function matches(q, name, id)
@@ -784,6 +823,7 @@ function St.ItemList(query, sortKey, category, V)
 		if itemInCategory(g, category) and matches(q, name, id) then
 			local e = { id = id, name = name, g = g }
 			if sortKey == "value" then e.v = (g.sell or 0) * g.qty end
+			if sortKey == "ah" then e.v = (St.AHPrice(id) or 0) * g.qty end
 			out[#out + 1] = e
 		end
 	end
@@ -795,7 +835,7 @@ function St.ItemList(query, sortKey, category, V)
 		elseif sortKey == "last" then
 			local ta, tb = a.g.last and a.g.last.t or 0, b.g.last and b.g.last.t or 0
 			if ta ~= tb then return ta > tb end
-		elseif sortKey == "value" then
+		elseif sortKey == "value" or sortKey == "ah" then
 			if a.v ~= b.v then return a.v > b.v end
 		else
 			if a.g.drops ~= b.g.drops then return a.g.drops > b.g.drops end

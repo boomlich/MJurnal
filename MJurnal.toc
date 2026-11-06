@@ -19,6 +19,7 @@ Tracker\Units.lua
 Tracker\Loot.lua
 Tracker\Progress.lua
 Tracker\Damage.lua
+Tracker\Auction.lua
 Tooltip.lua
 UI\Widgets.lua
 UI\Frame.lua

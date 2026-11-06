@@ -54,6 +54,10 @@ function UI.views.overview(c)
 		{ "Gold looted", Money(T.money or 0), "All money from loot windows (corpses, gathering, containers, fishing)." },
 		{ "Vendor value", Money(T.vendor or 0), "Vendor value of loot at the time it was looted." },
 		{ "Total value", Money((T.money or 0) + (T.vendor or 0)) },
+		{ "AH value of loot", (function()
+			local v, priced = St.AHValue(V.items)
+			return priced > 0 and Money(v) or "-"
+		end)(), "Everything you looted at today's auction price (items with a price only). " .. UI.AH_NOTE },
 		{ "XP from kills", Num(T.xp or 0) },
 		{ "Deaths", Num(T.deaths or 0) },
 		{ "Time in combat", Dur(G.ttk), "Summed engagement time of all recorded kills." },
@@ -112,9 +116,16 @@ function UI.views.overview(c)
 		return St.NPCValuePerCorpse(n)
 	end)) do
 		local n = e.e
-		rows[#rows + 1] = npcRow(e.id, { UI.NPCLabel(e.id), Money(e.score), Money(n.money / St.Corpses(n)), Num(St.Corpses(n)) })
+		local corpses = St.Corpses(n)
+		rows[#rows + 1] = npcRow(e.id, {
+			UI.NPCLabel(e.id), Money(e.score), Money((n.money + St.MarketValue(n.items)) / corpses), Money(n.money / corpses), Num(corpses),
+		})
 	end
-	c:Table({ { "Monster", 260 }, { "Value/corpse", 110, "RIGHT" }, { "Gold/corpse", 110, "RIGHT" }, { "Corpses", 70, "RIGHT" } }, rows, { empty = "Not enough data yet." })
+	c:Table({
+		{ "Monster", 260 }, { "Value/corpse", 110, "RIGHT", "Gold + vendor value per corpse." },
+		{ "AH value/corpse", 120, "RIGHT", "Gold + items at their auction price (vendor price without one) per corpse." },
+		{ "Gold/corpse", 110, "RIGHT" }, { "Corpses", 70, "RIGHT" },
+	}, rows, { empty = "Not enough data yet." })
 
 	c:Section("Fastest kills (avg time in combat)", "min. 5 kills")
 	rows = {}
@@ -336,12 +347,15 @@ function UI.views.overview(c)
 			local nd = e.e
 			rows[#rows + 1] = {
 				icon = UI.NodeIcon(nd.kind),
-				cells = { nd.name, UI.NODE_KIND[nd.kind] or nd.kind, Money(e.score), Num(nd.count) },
+				cells = { nd.name, UI.NODE_KIND[nd.kind] or nd.kind, Money(e.score), Money((nd.money + St.MarketValue(nd.items)) / nd.count), Num(nd.count) },
 				onClick = function() UI:Open(UI.TAB_GATHER, e.id) end,
 			}
 		end
 		c:Text(UI.Gold("Best sources") .. Grey("  ·  value per loot, min. 5 loots"), GameFontNormal)
-		c:Table({ { "Source", 220 }, { "Type", 130 }, { "Value/loot", 100, "RIGHT" }, { "Times", 70, "RIGHT" } }, rows, { empty = "Not enough data yet." })
+		c:Table({
+			{ "Source", 220 }, { "Type", 130 }, { "Value/loot", 100, "RIGHT", "Money + vendor value per loot." },
+			{ "AH value/loot", 110, "RIGHT", "Money + items at their auction price (vendor price without one) per loot." }, { "Times", 70, "RIGHT" },
+		}, rows, { empty = "Not enough data yet." })
 	end
 end
 

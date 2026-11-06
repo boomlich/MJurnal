@@ -13,6 +13,7 @@ local OPTIONS = {
 	{ "milestones", "Chat message on kill milestones" },
 	{ "newEntries", "Chat message on new entries", "New monsters and first-time uncommon+ loot." },
 	{ "rareAlerts", "Chat message when a rare is spotted" },
+	{ "ahAutoScan", "Scan the auction house when you open it", "A full scan of every auction for prices, at most every 15 minutes (the server's limit). You can always scan with the MJurnal button under the auction house." },
 	{ "debug", "Debug: print every kill / loot" },
 }
 

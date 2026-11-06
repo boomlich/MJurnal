@@ -60,6 +60,7 @@ local function itemRowTooltip(tt, npcId, n, itemId, it)
 	line(questOnly and "Dropped / corpses on quest" or "Dropped / corpses", Num(d) .. " / " .. Num(corpses))
 	if questOnly and it.drops ~= d then line("Drops before tracking", Num(it.drops - d)) end
 	line("Total quantity", Num(it.qty))
+	UI.AddAHLines(tt, itemId, perCorpse, "AH value per corpse")
 	line(questOnly and "Avg per corpse on quest" or "Avg per corpse", perCorpse and format("%.3f", perCorpse) or "-")
 	if perCorpse and perCorpse > 0 then
 		line("Corpses for 10 / 20", format("~%s / ~%s", Num(math.ceil(10 / perCorpse)), Num(math.ceil(20 / perCorpse))))
@@ -394,6 +395,7 @@ function UI.views.monster(c, npcId)
 	-- money & value
 	c:Section("Money & value")
 	local vendor = St.NPCVendor(n)
+	local ahValue, ahPriced, ahTotal = St.AHValue(n.items)
 	local combatHours = (n.ttkSum or 0) / 3600
 	c:Grid({
 		{ "Gold looted", Money(n.money) },
@@ -404,6 +406,13 @@ function UI.views.monster(c, npcId)
 		{ "Only gold", Num(n.moneyOnly or 0), "Corpses that had money but no items." },
 		{ "Vendor value (items)", Money(vendor), "Sum of vendor sell price x quantity for everything this monster dropped." },
 		{ "Avg vendor / corpse", corpses > 0 and Money(vendor / corpses) or "-" },
+		{ "AH value (items)", ahPriced > 0 and Money(ahValue) or "-", function(tt)
+			tt:AddLine(("Everything it dropped at today's auction price. %d of %d items have a price."):format(ahPriced, ahTotal), nil, nil, nil, true)
+			tt:AddLine(UI.AH_NOTE, 0.7, 0.7, 0.7, true)
+		end },
+		{ "Avg AH / corpse", ahPriced > 0 and corpses > 0 and Money(ahValue / corpses) or "-" },
+		{ "Total / corpse (AH)", ahPriced > 0 and corpses > 0 and Money((n.money + St.MarketValue(n.items)) / corpses) or "-",
+			"Gold + items at their auction price (vendor price for items without one), per corpse." },
 		{ "Total value / corpse", corpses > 0 and Money((n.money + vendor) / corpses) or "-", "Gold + vendor value per corpse. Use it to compare farm spots." },
 		{ "Value / combat hour", combatHours > 0.01 and Money((n.money + vendor) / combatHours) or "-", "Gold + vendor value divided by time spent fighting this monster." },
 		{ "Distinct items", Num(MJ.Count(n.items)) },
