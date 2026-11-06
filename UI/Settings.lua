@@ -2,17 +2,28 @@
 local _, MJ = ...
 local UI = MJ.UI
 
+-- { setting, label, tooltip }
 local OPTIONS = {
 	{ "minimapButton", "Show minimap button" },
-	{ "fadeMoving", "Fade the journal while moving (fully visible while the mouse is over it)" },
-	{ "fadeCombat", "Fade the journal while in combat (fully visible while the mouse is over it)" },
-	{ "unitTooltip", "Show MJurnal line on NPC tooltips" },
-	{ "itemTooltip", "Show MJurnal line on item tooltips" },
-	{ "dropAlerts", "Chat alert on rare drops (rate at or below %s, or epic+)" },
+	{ "fadeMoving", "Fade the journal while moving", "Fully visible while the mouse is over it." },
+	{ "fadeCombat", "Fade the journal in combat", "Fully visible while the mouse is over it." },
+	{ "unitTooltip", "MJurnal line on NPC tooltips", "Kills, corpses looted and value per corpse." },
+	{ "itemTooltip", "MJurnal line on item tooltips", "Times looted and the best source." },
+	{ "dropAlerts", "Chat alert on rare drops", "Drops with a rate at or below %s, or epic and better." },
 	{ "milestones", "Chat message on kill milestones" },
-	{ "newEntries", "Chat message on new monsters and first-time uncommon+ loot" },
-	{ "rareAlerts", "Chat message when a rare monster is spotted" },
-	{ "debug", "Debug: print every detected kill / loot" },
+	{ "newEntries", "Chat message on new entries", "New monsters and first-time uncommon+ loot." },
+	{ "rareAlerts", "Chat message when a rare is spotted" },
+	{ "debug", "Debug: print every kill / loot" },
+}
+
+-- Quest drop stats on NPC tooltips: the switch, then what to show.
+local QUEST_OPTIONS = {
+	{ "qtRate", "Drop rate", "Chance per corpse (on-quest corpses for quest-only items)." },
+	{ "qtLeft", "Kills left for the quest", "Estimate from the items still needed and the average per kill." },
+	{ "qtOneIn", "1 in X", "Corpses per drop." },
+	{ "qtPerCorpse", "Average per kill", "Units of the item per corpse, stacks counted." },
+	{ "qtSample", "Drops / corpses", "The numbers the rate is built from." },
+	{ "qtSince", "Corpses since last drop" },
 }
 
 local panel
@@ -28,26 +39,69 @@ local function build()
 	sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
 	sub:SetText("Monster & loot journal. Key bindings are under Key Bindings > AddOns > MJurnal.")
 
-	local y = -64
 	panel.checks = {}
-	for _, opt in ipairs(OPTIONS) do
+	local function check(opt, x, y, onClick)
 		local cb = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
-		cb:SetPoint("TOPLEFT", 16, y)
+		cb:SetPoint("TOPLEFT", x, y)
 		local label = cb.Text or cb.text
 		if not label then
 			label = cb:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
 			label:SetPoint("LEFT", cb, "RIGHT", 4, 0)
 		end
-		-- "%s" in a label is the current rare-drop threshold
-		label:SetText(opt[2]:format(("%g%%"):format(MJ.db.settings.alertRate * 100)))
+		cb.label = label
+		label:SetText(opt[2])
 		cb.key = opt[1]
+		-- "%s" in a tooltip is the current rare-drop threshold
+		local tip = opt[3] and opt[3]:format(("%g%%"):format(MJ.db.settings.alertRate * 100))
+		if tip then
+			cb:SetScript("OnEnter", function(s)
+				GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
+				GameTooltip:SetText(opt[2], 1, 1, 1)
+				GameTooltip:AddLine(tip, nil, nil, nil, true)
+				GameTooltip:Show()
+			end)
+			cb:SetScript("OnLeave", function() GameTooltip:Hide() end)
+		end
 		cb:SetScript("OnClick", function(s)
 			MJ.db.settings[s.key] = s:GetChecked() and true or false
 			MJ:Fire("SETTING_CHANGED", s.key)
+			if onClick then onClick() end
 		end)
 		panel.checks[#panel.checks + 1] = cb
+		return cb
+	end
+
+	local y = -64
+	for _, opt in ipairs(OPTIONS) do
+		check(opt, 16, y)
 		y = y - 30
 	end
+
+	-- right column: quest drop stats on NPC tooltips
+	local qx, qy = 340, -64
+	local qTitle = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+	qTitle:SetPoint("TOPLEFT", qx + 4, qy)
+	qTitle:SetText("Quest drops on NPC tooltips")
+	local qNote = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+	qNote:SetPoint("TOPLEFT", qTitle, "BOTTOMLEFT", 0, -4)
+	qNote:SetWidth(300)
+	qNote:SetJustifyH("LEFT")
+	qNote:SetText("Shown next to the quest objective (\"Murloc Fin: 3/6\") when you mouse over a monster that has dropped the item.")
+	local subChecks = {}
+	local function updateSub()
+		local on = MJ.db.settings.questTooltip
+		for _, cb in ipairs(subChecks) do
+			if on then cb:Enable() else cb:Disable() end
+			cb.label:SetTextColor(on and 1 or 0.5, on and 1 or 0.5, on and 1 or 0.5)
+		end
+	end
+	qy = qy - 46
+	check({ "questTooltip", "Show quest drop stats" }, qx, qy, updateSub)
+	for _, opt in ipairs(QUEST_OPTIONS) do
+		qy = qy - 26
+		subChecks[#subChecks + 1] = check(opt, qx + 24, qy)
+	end
+	panel.updateSub = updateSub
 
 	local qLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 	qLabel:SetPoint("TOPLEFT", 20, y - 10)
@@ -147,6 +201,7 @@ local function build()
 
 	panel:SetScript("OnShow", function()
 		for _, cb in ipairs(panel.checks) do cb:SetChecked(MJ.db.settings[cb.key]) end
+		panel.updateSub()
 		updateQ()
 		updateF()
 	end)

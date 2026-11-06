@@ -55,6 +55,7 @@ The journal works both ways:
 - **Key binding** to open the journal on the NPC under your mouse
 - Minimap button (draggable), addon compartment entry and a LibDataBroker launcher
 - A short MJurnal line on NPC and item tooltips
+- **Quest drop stats on NPC tooltips**: on a monster that drops an item your quest log needs, the quest objective line gets the numbers too, e.g. *Murloc Fin: 3/6  32% drop · ~9 kills left*. Choose what is shown in the settings (drop rate, kills left, 1 in X, average per kill, drops / corpses, corpses since the last drop)
 - Chat alerts for rare drops, kill milestones, new entries and rare monsters
 - Fades while you move (like the world map) or are in combat, and stays fully visible under the mouse
 
@@ -82,7 +83,7 @@ The journal works both ways:
 
 Key bindings are under **Esc → Options → Keybindings → AddOns → MJurnal**.
 
-Toggle commands: `/mj tooltip`, `/mj itemtooltip`, `/mj alerts`, `/mj milestones`, `/mj minimap`, `/mj fade`, `/mj combatfade`. Use `/mj fade <percent>` to set the opacity while moving or in combat, and `/mj debug` to print every detected kill and loot.
+Toggle commands: `/mj tooltip`, `/mj itemtooltip`, `/mj questtooltip`, `/mj alerts`, `/mj milestones`, `/mj minimap`, `/mj fade`, `/mj combatfade`. Use `/mj fade <percent>` to set the opacity while moving or in combat, and `/mj debug` to print every detected kill and loot.
 
 **Tip:** turn on enemy nameplates (`V` by default). MJurnal sees deaths through nameplates as well as your target, so kills are caught even when you don't target the mob.
 

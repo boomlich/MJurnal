@@ -107,6 +107,13 @@ end
 local DEFAULT_SETTINGS = {
 	unitTooltip = true,   -- line on NPC tooltips
 	itemTooltip = true,   -- line on item tooltips
+	questTooltip = true,  -- quest drop stats next to quest objectives on NPC tooltips
+	qtRate = true,        --   drop rate
+	qtLeft = true,        --   kills left for the quest
+	qtOneIn = false,      --   1 in X
+	qtPerCorpse = false,  --   average per kill
+	qtSample = false,     --   drops / corpses
+	qtSince = false,      --   corpses since the last drop
 	milestones = true,    -- chat message on kill milestones
 	dropAlerts = true,    -- chat message on rare drops
 	newEntries = true,    -- chat message on new monsters / notable new items
@@ -660,7 +667,7 @@ SlashCmdList.MJURNAL = function(msg)
 		MJ:Print("/mj loot <text> - search loot")
 		MJ:Print("/mj overview | gathering | history - open a tab")
 		MJ:Print("/mj session - print this session's numbers")
-		MJ:Print("/mj tooltip | itemtooltip | alerts | milestones | minimap | fade | combatfade - toggle features")
+		MJ:Print("/mj tooltip | itemtooltip | questtooltip | alerts | milestones | minimap | fade | combatfade - toggle features")
 		MJ:Print("/mj fade <percent> - opacity while moving or in combat, e.g. /mj fade 30")
 		MJ:Print("/mj options - open settings")
 		MJ:Print("/mj debug - toggle detection debug messages")
@@ -670,6 +677,8 @@ SlashCmdList.MJURNAL = function(msg)
 		toggleSetting("unitTooltip", "NPC tooltip line")
 	elseif cmd == "itemtooltip" then
 		toggleSetting("itemTooltip", "Item tooltip line")
+	elseif cmd == "questtooltip" then
+		toggleSetting("questTooltip", "Quest drop stats on NPC tooltips")
 	elseif cmd == "alerts" then
 		toggleSetting("dropAlerts", "Rare drop alerts")
 	elseif cmd == "milestones" then

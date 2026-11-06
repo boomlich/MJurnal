@@ -19,7 +19,8 @@ function MJ.ObjectiveItemName(text)
 	return name ~= "" and name or nil
 end
 
--- Set of item names that are unfinished item objectives in your quest log: [name] = questID
+-- Item names that are unfinished item objectives in your quest log:
+-- [name] = { quest = questID, have = 3, need = 6 } (have / need nil when unknown)
 function MJ.WantedQuestItems()
 	if not dirty then return wanted end
 	dirty = false
@@ -35,8 +36,16 @@ function MJ.WantedQuestItems()
 			if okObj and type(objectives) == "table" then
 				for _, o in ipairs(objectives) do
 					if o.type == "item" and not S(o.finished) then
-						local name = MJ.ObjectiveItemName(S(o.text))
-						if name then wanted[name] = info.questID end
+						local text = S(o.text)
+						local name = MJ.ObjectiveItemName(text)
+						if name then
+							local have, need = S(o.numFulfilled), S(o.numRequired)
+							if not (have and need) and type(text) == "string" then
+								local h, n = text:match("(%d+)%s*/%s*(%d+)")
+								have, need = tonumber(h), tonumber(n)
+							end
+							wanted[name] = { quest = info.questID, have = have, need = need }
+						end
 					end
 				end
 			end
