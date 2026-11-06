@@ -370,6 +370,14 @@ function UI.RateText(p, corpses)
 	return s
 end
 
+-- "1.35" / "0.042": average units of an item per corpse, grey until the sample is decent
+function UI.PerCorpseText(v, corpses)
+	if not v then return UI.Grey("-") end
+	local s = v >= 10 and MJ.Num(v) or v >= 0.1 and ("%.2f"):format(v) or ("%.3f"):format(v)
+	if not MJ.Stats.Confident(corpses) then return UI.Grey(s) end
+	return s
+end
+
 function UI.SpellLabel(spellID)
 	if not spellID or spellID == 0 or spellID == 6603 then return "Melee" end
 	local name = MJ.SpellName(spellID)

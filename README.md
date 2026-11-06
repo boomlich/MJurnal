@@ -17,6 +17,7 @@ The journal works both ways:
 - Vendor value of loot and **total value per corpse**, for comparing farm spots
 - Loot table per item:
   - drops, quantity, **drop rate** (with a 95% confidence interval on hover)
+  - **average quantity per corpse** (every unit of a stack counts) and how often each amount dropped, plus the corpses needed for 10 / 20 of an item
   - **1 in X**, corpses since the last drop, corpses needed for a **50% / 90% / 99%** chance
   - longest dry streak and a **luck** score, plus an overdue highlight when a dry streak gets unlikely
 - **Quest drops** in their own table: items that only drop while a quest needs them get a rate per corpse looted *while the quest wanted them*, with a "needed now" marker
@@ -88,6 +89,7 @@ WoW Forever runs with the Midnight addon restrictions: addons **cannot read the 
 - Every loot window is split per corpse with `GetLootSourceInfo`, so AoE loot is attributed correctly. A corpse is only counted once.
 - Corpses with no loot are detected through `UNIT_LOOT`/`CanLootUnit` and counted as **empty corpses**. In a group this only happens with free-for-all loot: with other loot methods a corpse someone else has the rights to looks empty too, so unlooted corpses are left out instead.
 - **Drop rates are per corpse**: looted + confirmed empty. Kills you never looted don't dilute the numbers.
+- The drop rate is the chance that a corpse has the item at all. When a corpse drops several (a stack of 3, or the same item in two slots), every unit counts towards the quantity and the **per corpse** average.
 
 ### Damage
 - Damage comes from Blizzard's built-in damage meter API (`C_DamageMeter`), the same source Details! uses on Forever.

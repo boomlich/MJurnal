@@ -80,8 +80,9 @@ function MJ:OnItemDrop(npcId, n, itemId, it, gap, e)
 		self:Log({ k = "drop", npc = npcId, item = itemId, q = e.q, gap = gap, cn = corpses, d = it.drops })
 	end
 	if not s.dropAlerts then return end
+	local itemText = self:ItemText(itemId) .. (e.q > 1 and (" x" .. e.q) or "")
 	if rare or q >= 4 then
-		local text = format("%s dropped from |cffffd200%s|r", self:ItemText(itemId), self:NPCName(npcId))
+		local text = format("%s dropped from |cffffd200%s|r", itemText, self:NPCName(npcId))
 		if it.drops > 1 and corpses > gap then
 			local expected = (corpses - gap) / (it.drops - 1)
 			text = text .. format(" after %d corpses (expected ~%d). Rate now %s.", gap, math.floor(expected + 0.5), MJ.Pct(rate))
@@ -90,6 +91,6 @@ function MJ:OnItemDrop(npcId, n, itemId, it, gap, e)
 		end
 		self:Print(text)
 	elseif it.drops == 1 and s.newEntries and q >= 2 then
-		self:Print(format("New loot: %s from |cffffd200%s|r", self:ItemText(itemId), self:NPCName(npcId)))
+		self:Print(format("New loot: %s from |cffffd200%s|r", itemText, self:NPCName(npcId)))
 	end
 end

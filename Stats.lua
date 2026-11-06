@@ -62,15 +62,36 @@ function St.IsQuestOnly(itemId, it)
 end
 
 -- The numbers a drop rate is built from for one item from one monster:
--- drops, corpses, questOnly, corpses since last drop, longest dry streak.
+-- drops, corpses, questOnly, corpses since last drop, longest dry streak, quantity.
 -- Quest-only items only count corpses looted while the quest wanted them.
+-- drops counts corpses that had the item (for the drop chance); qty counts every unit.
 function St.ItemBase(n, itemId, it)
 	if St.IsQuestOnly(itemId, it) then
 		local g = MJ.db.items[itemId]
 		local need = (g and g.name and n.qNeed and n.qNeed[g.name]) or 0
-		return it.qDrops or 0, need, true, max(0, need - (it.qLastAt or 0)), it.qDryMax or 0
+		local d = it.qDrops or 0
+		-- older data has no on-quest quantity: estimate it from the average stack
+		local qty = it.qQty or (d * it.qty / max(it.drops, 1))
+		return d, need, true, max(0, need - (it.qLastAt or 0)), it.qDryMax or 0, qty
 	end
-	return it.drops, St.Corpses(n), false, St.Since(n, it), it.dryMax or 0
+	return it.drops, St.Corpses(n), false, St.Since(n, it), it.dryMax or 0, it.qty
+end
+
+-- Average number of units per corpse (not just the chance of at least one).
+function St.PerCorpse(qty, corpses)
+	if not corpses or corpses <= 0 then return nil end
+	return qty / corpses
+end
+
+-- "1x 40 · 2x 12 · 3x 3": how often each amount dropped from one corpse, smallest first.
+function St.StackText(it)
+	if not it.stacks then return nil end
+	local amounts = {}
+	for q in pairs(it.stacks) do amounts[#amounts + 1] = q end
+	table.sort(amounts)
+	local parts = {}
+	for _, q in ipairs(amounts) do parts[#parts + 1] = q .. "x " .. MJ.Num(it.stacks[q]) end
+	return table.concat(parts, "  ·  ")
 end
 
 -- Confidence label: grey numbers until we have a decent sample.
@@ -181,10 +202,10 @@ function St.ItemSources(itemId)
 		local n = MJ.db.npcs[npcId]
 		local it = n and n.items[itemId]
 		if it then
-			local d, c, questOnly, since, dry = St.ItemBase(n, itemId, it)
+			local d, c, questOnly, since, dry, qty = St.ItemBase(n, itemId, it)
 			list[#list + 1] = {
 				npc = npcId, n = n, it = it, drops = d, corpses = c, rate = St.Rate(d, c) or 0,
-				questOnly = questOnly, since = since, dry = dry,
+				questOnly = questOnly, since = since, dry = dry, qty = qty, perCorpse = St.PerCorpse(qty, c),
 			}
 		end
 	end

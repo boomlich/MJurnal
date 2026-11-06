@@ -334,6 +334,9 @@ function MJ:RecordNPCItemDrop(n, npcId, itemId, e, corpseIdx)
 	it.qty = it.qty + e.q
 	it.sMin = min(it.sMin or e.q, e.q)
 	it.sMax = max(it.sMax or e.q, e.q)
+	-- how often each amount dropped from one corpse: [amount] = corpses
+	it.stacks = it.stacks or {}
+	it.stacks[e.q] = (it.stacks[e.q] or 0) + 1
 	it.dryMax = max(it.dryMax or 0, gap - 1)
 	it.gapMin = min(it.gapMin or gap, gap)
 	it.lastAt = corpseIdx
@@ -351,6 +354,7 @@ function MJ:RecordNPCItemDrop(n, npcId, itemId, e, corpseIdx)
 		local name = e.name or g.name
 		if name and MJ.WantedQuestItems()[name] then
 			it.qDrops = (it.qDrops or 0) + 1
+			it.qQty = (it.qQty or 0) + e.q
 			local idx = (n.qNeed and n.qNeed[name]) or 0
 			it.qDryMax = max(it.qDryMax or 0, idx - (it.qLastAt or 0) - 1)
 			it.qLastAt = idx

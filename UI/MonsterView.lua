@@ -9,21 +9,24 @@ local GATHER_LABEL = { skin = "Skinning", herb = "Herbalism", mine = "Mining", p
 UI.GATHER_LABEL = GATHER_LABEL
 
 -- loot table sorting (one state per table): column index -> value getter
-local lootSort = { col = 4, desc = true }
-local questSort = { col = 4, desc = true }
+local RATE_COL = 5
+local lootSort = { col = RATE_COL, desc = true }
+local questSort = { col = RATE_COL, desc = true }
 -- "1 in" and "50%/90%" both grow with 1 / rate, so they sort on that (not on the rate itself)
 local function oneIn(r) return r.p > 0 and 1 / r.p or math.huge end
 local SORT_GETTERS = {
 	[1] = function(r) return r.name end,
 	[2] = function(r) return r.d end,
 	[3] = function(r) return r.qOrQty end,
-	[4] = function(r) return r.p end,
-	[5] = oneIn,
-	[6] = function(r) return r.since end,
-	[7] = oneIn,
-	[8] = function(r) return r.dry end,
-	[9] = function(r) return r.last end,
+	[4] = function(r) return r.perCorpse or 0 end,
+	[5] = function(r) return r.p end,
+	[6] = oneIn,
+	[7] = function(r) return r.since end,
+	[8] = oneIn,
+	[9] = function(r) return r.dry end,
+	[10] = function(r) return r.last end,
 }
+
 
 local function confirmDelete(npcId)
 	StaticPopupDialogs.MJURNAL_DELETE_NPC = StaticPopupDialogs.MJURNAL_DELETE_NPC or {
@@ -45,9 +48,10 @@ end
 local function itemRowTooltip(tt, npcId, n, itemId, it)
 	local g = MJ.db.items[itemId]
 	if g and g.link then tt:SetHyperlink(g.link) else tt:SetItemByID(itemId) end
-	local d, corpses, questOnly, since, dry = St.ItemBase(n, itemId, it)
+	local d, corpses, questOnly, since, dry, qty = St.ItemBase(n, itemId, it)
 	local p = St.Rate(d, corpses)
 	local lo, hi = St.Wilson(d, corpses)
+	local perCorpse = St.PerCorpse(qty, corpses)
 	local function line(l, r) tt:AddDoubleLine(l, r, 0.8, 0.8, 0.8, 1, 1, 1) end
 	tt:AddLine(" ")
 	tt:AddLine("MJurnal - from " .. MJ:NPCName(npcId), 1, 0.82, 0)
@@ -56,7 +60,13 @@ local function itemRowTooltip(tt, npcId, n, itemId, it)
 	line(questOnly and "Dropped / corpses on quest" or "Dropped / corpses", Num(d) .. " / " .. Num(corpses))
 	if questOnly and it.drops ~= d then line("Drops before tracking", Num(it.drops - d)) end
 	line("Total quantity", Num(it.qty))
-	line("Stack min / avg / max", format("%d / %.1f / %d", it.sMin or 0, it.qty / max(it.drops, 1), it.sMax or 0))
+	line(questOnly and "Avg per corpse on quest" or "Avg per corpse", perCorpse and format("%.3f", perCorpse) or "-")
+	if perCorpse and perCorpse > 0 then
+		line("Corpses for 10 / 20", format("~%s / ~%s", Num(math.ceil(10 / perCorpse)), Num(math.ceil(20 / perCorpse))))
+	end
+	line("Per drop min / avg / max", format("%d / %.2f / %d", it.sMin or 0, it.qty / max(it.drops, 1), it.sMax or 0))
+	local stacks = St.StackText(it)
+	if stacks then line("Amounts per drop", stacks) end
 	line("Corpses for 50% / 90% / 99%", format("%s / %s / %s", Num(St.KillsFor(p, 0.5)), Num(St.KillsFor(p, 0.9)), Num(St.KillsFor(p, 0.99))))
 	line("Corpses since last drop", Num(since))
 	if since > 0 and p then line("Chance of a dry streak this long", Pct(St.Drought(p, since))) end
@@ -91,12 +101,13 @@ local function renderLootTable(c, npcId, n, quest)
 	local wanted = MJ.WantedQuestItems()
 	local rows = {}
 	for itemId, it in pairs(n.items) do
-		local d, corpses, questOnly, since, dry = St.ItemBase(n, itemId, it)
+		local d, corpses, questOnly, since, dry, qty = St.ItemBase(n, itemId, it)
 		if questOnly == quest then
 			local g = MJ.db.items[itemId]
 			local name = (g and g.name) or ("Item #" .. itemId)
 			rows[#rows + 1] = {
 				itemId = itemId, it = it, d = d, corpses = corpses, p = St.Rate(d, corpses) or 0,
+				perCorpse = St.PerCorpse(qty, corpses),
 				since = since, dry = dry, name = name,
 				qOrQty = quest and corpses or it.qty,
 				wanted = wanted[name] ~= nil,
@@ -106,7 +117,7 @@ local function renderLootTable(c, npcId, n, quest)
 	end
 	if #rows == 0 then return 0 end
 	local sortState = quest and questSort or lootSort
-	local getter = SORT_GETTERS[sortState.col] or SORT_GETTERS[4]
+	local getter = SORT_GETTERS[sortState.col] or SORT_GETTERS[RATE_COL]
 	table.sort(rows, function(a, b)
 		local va, vb = getter(a), getter(b)
 		if va == vb then return a.name < b.name end
@@ -127,7 +138,8 @@ local function renderLootTable(c, npcId, n, quest)
 			icon = MJ:ItemIcon(r.itemId),
 			cells = {
 				MJ:ItemText(r.itemId) .. ((it.quest and not quest) and Grey(" (Q)") or ""),
-				Num(r.d), quest and Num(r.corpses) or Num(it.qty), UI.RateText(p, r.corpses), UI.OneIn(p),
+				Num(r.d), quest and Num(r.corpses) or Num(it.qty), UI.PerCorpseText(r.perCorpse, r.corpses),
+				UI.RateText(p, r.corpses), UI.OneIn(p),
 				sinceText(p, r.since),
 				(k50 and Num(k50) or "-") .. " / " .. (k90 and Num(k90) or "-"),
 				Num(r.dry), lastCell,
@@ -146,10 +158,11 @@ local function renderLootTable(c, npcId, n, quest)
 	local cols
 	if quest then
 		cols = {
-			{ "Quest item", 196 },
-			{ "Drops", 42, "RIGHT", "Drops while the quest needed it." },
+			{ "Quest item", 172 },
+			{ "Drops", 42, "RIGHT", "On-quest corpses that had this item." },
 			{ "Corpses", 50, "RIGHT", "Corpses you looted while an unfinished quest in your log needed this item." },
-			{ "Rate", 56, "RIGHT", "Drops divided by on-quest corpses. Grey until 20 corpses." },
+			{ "Per corpse", 60, "RIGHT", "Average number of this item per on-quest corpse (stacks counted). Use it to estimate how many kills the quest needs." },
+			{ "Rate", 56, "RIGHT", "Chance that an on-quest corpse has at least one. Grey until 20 corpses." },
 			{ "1 in", 44, "RIGHT", "Expected on-quest corpses per drop." },
 			{ "Since", 44, "RIGHT", "On-quest corpses since the last drop." },
 			{ "50%/90%", 66, "RIGHT", "On-quest corpses needed for a 50% / 90% chance of at least one drop." },
@@ -158,10 +171,11 @@ local function renderLootTable(c, npcId, n, quest)
 		}
 	else
 		cols = {
-			{ "Item", 196 },
+			{ "Item", 172 },
 			{ "Drops", 42, "RIGHT", "Number of corpses that had this item." },
 			{ "Qty", 44, "RIGHT", "Total quantity (stacks summed)." },
-			{ "Rate", 56, "RIGHT", "Drops divided by corpses (looted + confirmed empty). Grey until 20 corpses." },
+			{ "Per corpse", 60, "RIGHT", "Average number of this item per corpse (looted + confirmed empty), counting every unit of a stack." },
+			{ "Rate", 56, "RIGHT", "Chance that a corpse has at least one (drops / corpses). Grey until 20 corpses." },
 			{ "1 in", 44, "RIGHT", "Expected corpses per drop (1 / rate)." },
 			{ "Since", 44, "RIGHT", "Corpses since the last drop. Orange/red when a dry streak this long is unlikely (<10% / <2%)." },
 			{ "50%/90%", 66, "RIGHT", "Corpses needed for a 50% / 90% chance of at least one drop." },

@@ -41,7 +41,7 @@ function UI.views.loot(c, itemId)
 	c:Grid({
 		{ "Times looted", Num(g.drops), "Number of loot windows (corpses, catches, containers...) that had this item." },
 		{ "Total quantity", Num(g.qty) },
-		{ "Avg stack", format("%.2f", g.qty / max(g.drops, 1)) },
+		{ "Avg per loot", format("%.2f", g.qty / max(g.drops, 1)), "Average quantity each time it was looted (several units from one corpse count as one loot)." },
 		{ "Vendor value earned", Money((g.sell or 0) * g.qty) },
 		{ "Monsters that drop it", Num(#sources) },
 		{ "Best source", best and (MJ:NPCName(best.npc) .. " (" .. Pct(best.rate) .. ")") or "-" },
@@ -66,7 +66,8 @@ function UI.views.loot(c, itemId)
 		local since = s.since
 		rows[#rows + 1] = {
 			cells = {
-				UI.NPCLabel(s.npc), Num(s.drops), Num(s.it.qty), Num(s.corpses), UI.RateText(p, s.corpses), UI.OneIn(p),
+				UI.NPCLabel(s.npc), Num(s.drops), Num(s.it.qty), Num(s.corpses), UI.PerCorpseText(s.perCorpse, s.corpses),
+				UI.RateText(p, s.corpses), UI.OneIn(p),
 				Num(since), Num(St.KillsFor(p, 0.9)), s.questOnly and Grey("-") or UI.LuckText(St.Luck(s.it)),
 			},
 			onEnter = function(_, tt)
@@ -74,6 +75,11 @@ function UI.views.loot(c, itemId)
 				local lo, hi = St.Wilson(s.drops, s.corpses)
 				tt:AddDoubleLine(s.questOnly and "Drop rate while on the quest" or "Drop rate", Pct(p), 0.8, 0.8, 0.8, 1, 1, 1)
 				if lo then tt:AddDoubleLine("95% confidence", Pct(lo) .. " - " .. Pct(hi), 0.8, 0.8, 0.8, 0.8, 0.8, 0.8) end
+				if s.perCorpse then
+					tt:AddDoubleLine(s.questOnly and "Avg per corpse on quest" or "Avg per corpse", format("%.3f", s.perCorpse), 0.8, 0.8, 0.8, 1, 1, 1)
+				end
+				local stacks = St.StackText(s.it)
+				if stacks then tt:AddDoubleLine("Amounts per drop", stacks, 0.8, 0.8, 0.8, 1, 1, 1) end
 				tt:AddDoubleLine("Kills", Num(s.n.kills), 0.8, 0.8, 0.8, 1, 1, 1)
 				tt:AddDoubleLine("Longest dry streak", Num(s.dry), 0.8, 0.8, 0.8, 1, 1, 1)
 				if since > 0 and p > 0 then
@@ -86,8 +92,9 @@ function UI.views.loot(c, itemId)
 		}
 	end
 	c:Table({
-		{ "Monster", 190 }, { "Drops", 44, "RIGHT" }, { "Qty", 44, "RIGHT" }, { "Corpses", 54, "RIGHT" },
-		{ "Rate", 56, "RIGHT" }, { "1 in", 44, "RIGHT" }, { "Since", 44, "RIGHT", "Corpses since the last drop from this monster." },
+		{ "Monster", 190 }, { "Drops", 44, "RIGHT", "Corpses that had this item." }, { "Qty", 44, "RIGHT" }, { "Corpses", 54, "RIGHT" },
+		{ "Per corpse", 60, "RIGHT", "Average number of this item per corpse, counting every unit of a stack." },
+		{ "Rate", 56, "RIGHT", "Chance that a corpse has at least one." }, { "1 in", 44, "RIGHT" }, { "Since", 44, "RIGHT", "Corpses since the last drop from this monster." },
 		{ "90%", 44, "RIGHT", "Corpses for a 90% chance of at least one." }, { "Luck", 44, "RIGHT" },
 	}, rows, { empty = "No monster drops recorded." })
 
