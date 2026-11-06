@@ -105,7 +105,8 @@ local DEFAULT_SETTINGS = {
 	minimapButton = true, -- show the minimap button
 	minimapAngle = 215,   -- position of the minimap button (degrees)
 	fadeMoving = true,    -- fade the journal while the player moves
-	fadeAlpha = 0.35,     -- journal opacity while moving
+	fadeCombat = true,    -- fade the journal while the player is in combat
+	fadeAlpha = 0.35,     -- journal opacity while faded (moving or in combat)
 	logQuality = 2,       -- log drops of this quality or better (2 = uncommon)
 	alertRate = 0.05,     -- drops with a rate at or below this are "rare drops"
 	debug = false,
@@ -512,8 +513,8 @@ SlashCmdList.MJURNAL = function(msg)
 		MJ:Print("/mj loot <text> - search loot")
 		MJ:Print("/mj overview | history - open a tab")
 		MJ:Print("/mj session - print this session's numbers")
-		MJ:Print("/mj tooltip | itemtooltip | alerts | milestones | minimap | fade - toggle features")
-		MJ:Print("/mj fade <percent> - opacity while moving, e.g. /mj fade 30")
+		MJ:Print("/mj tooltip | itemtooltip | alerts | milestones | minimap | fade | combatfade - toggle features")
+		MJ:Print("/mj fade <percent> - opacity while moving or in combat, e.g. /mj fade 30")
 		MJ:Print("/mj options - open settings")
 		MJ:Print("/mj debug - toggle detection debug messages")
 	elseif cmd == "debug" then
@@ -533,10 +534,12 @@ SlashCmdList.MJURNAL = function(msg)
 		if pct then
 			MJ.db.settings.fadeAlpha = math.max(0.05, math.min(1, pct / 100))
 			MJ.db.settings.fadeMoving = true
-			MJ:Print(format("Opacity while moving: %d%%", math.floor(MJ.db.settings.fadeAlpha * 100 + 0.5)))
+			MJ:Print(format("Opacity while moving / in combat: %d%%", math.floor(MJ.db.settings.fadeAlpha * 100 + 0.5)))
 		else
 			toggleSetting("fadeMoving", "Fade while moving")
 		end
+	elseif cmd == "combatfade" then
+		toggleSetting("fadeCombat", "Fade in combat")
 	elseif cmd == "options" or cmd == "config" or cmd == "settings" then
 		MJ.UI:OpenSettings()
 	elseif cmd == "overview" then

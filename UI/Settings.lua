@@ -5,6 +5,7 @@ local UI = MJ.UI
 local OPTIONS = {
 	{ "minimapButton", "Show minimap button" },
 	{ "fadeMoving", "Fade the journal while moving (fully visible while the mouse is over it)" },
+	{ "fadeCombat", "Fade the journal while in combat (fully visible while the mouse is over it)" },
 	{ "unitTooltip", "Show MJurnal line on NPC tooltips" },
 	{ "itemTooltip", "Show MJurnal line on item tooltips" },
 	{ "dropAlerts", "Chat alert on rare drops (rate at or below %s, or epic+)" },
@@ -67,7 +68,7 @@ local function build()
 	local FADE_STEPS = { 0.2, 0.35, 0.5, 0.65, 0.8 }
 	local fLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 	fLabel:SetPoint("TOPLEFT", 20, y - 44)
-	fLabel:SetText("Opacity while moving:")
+	fLabel:SetText("Opacity while faded:")
 	local fBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
 	fBtn:SetSize(80, 22)
 	fBtn:SetPoint("LEFT", fLabel, "RIGHT", 10, 0)

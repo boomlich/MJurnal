@@ -46,7 +46,7 @@ The journal works both ways:
 - Minimap button (draggable), addon compartment entry and a LibDataBroker launcher
 - A short MJurnal line on NPC and item tooltips
 - Chat alerts for rare drops, kill milestones, new entries and rare monsters
-- Fades while you move (like the world map) and stays fully visible under the mouse
+- Fades while you move (like the world map) or are in combat, and stays fully visible under the mouse
 
 ## Installation
 
@@ -72,7 +72,7 @@ The journal works both ways:
 
 Key bindings are under **Esc → Options → Keybindings → AddOns → MJurnal**.
 
-Toggle commands: `/mj tooltip`, `/mj itemtooltip`, `/mj alerts`, `/mj milestones`, `/mj minimap`, `/mj fade`. Use `/mj fade <percent>` to set the opacity while moving, and `/mj debug` to print every detected kill and loot.
+Toggle commands: `/mj tooltip`, `/mj itemtooltip`, `/mj alerts`, `/mj milestones`, `/mj minimap`, `/mj fade`, `/mj combatfade`. Use `/mj fade <percent>` to set the opacity while moving or in combat, and `/mj debug` to print every detected kill and loot.
 
 **Tip:** turn on enemy nameplates (`V` by default). MJurnal sees deaths through nameplates as well as your target, so kills are caught even when you don't target the mob.
 

@@ -17,10 +17,15 @@ UI.state = {
 
 local function hasList(tab) return tab == TAB_MONSTERS or tab == TAB_LOOT end
 
+local function inCombat()
+	return InCombatLockdown() or MJ.S(UnitAffectingCombat("player")) and true or false
+end
+
+-- Faded while moving or in combat (each can be turned off), fully visible under the mouse.
 function UI.FadeTarget(frame)
 	local s = MJ.db.settings
-	if not s.fadeMoving or not IsPlayerMoving() then return 1 end
-	if frame:IsMouseOver() then return 1 end
+	local fade = (s.fadeMoving and IsPlayerMoving()) or (s.fadeCombat and inCombat())
+	if not fade or frame:IsMouseOver() then return 1 end
 	return s.fadeAlpha or 0.35
 end
 
@@ -344,7 +349,7 @@ function UI:Build()
 	end
 	PanelTemplates_SetNumTabs(f, #TABS)
 
-	-- Fade while the player moves (like the world map), but stay fully visible under the mouse.
+	-- Fade while the player moves (like the world map) or fights, but stay fully visible under the mouse.
 	f:SetScript("OnUpdate", function(s, elapsed)
 		local target = UI.FadeTarget(s)
 		local a = s:GetAlpha()
