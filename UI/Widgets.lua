@@ -586,12 +586,14 @@ function UI.DeathTooltip(tt, e)
 	if e.g then line("Group", "yes") end
 end
 
+-- Puts an item link in chat: into the chat box you are typing in, or else opens the chat box
+-- with the link in it (ChatEdit_InsertLink does nothing when no chat box is open).
 function UI.InsertLink(link)
-	if ChatEdit_InsertLink then
-		ChatEdit_InsertLink(link)
-	elseif ChatFrameUtil and ChatFrameUtil.InsertLink then
-		ChatFrameUtil.InsertLink(link)
-	end
+	if not link then return end
+	local insert = ChatEdit_InsertLink or (ChatFrameUtil and ChatFrameUtil.InsertLink)
+	if insert and insert(link) then return end
+	local open = ChatFrame_OpenChat or (ChatFrameUtil and ChatFrameUtil.OpenChat)
+	if open then open(link) end
 end
 
 function UI.OneIn(p)
