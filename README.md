@@ -55,7 +55,8 @@ The journal works both ways:
 
 ### Characters & categories
 - **Character filter** (top right of the journal): show every character, one character or any mix of them. Lists, monster and item pages, the overview and the history all follow it; tooltips and chat alerts always use the whole account.
-- **Categories** next to the search box: monsters by creature type (Beast, Humanoid...), classification (Elite, Rare...) or the zone they were killed in (a section that folds in and out), loot by item type (Weapon, Trade Goods...) and subtype (Armor: Cloth / Leather / Mail / Plate, Weapon: One-Handed Swords, Staves...) or quest items. Subtypes fold out under their type with the +/- button, or all at once with *Expand all* / *Collapse all*. "All" shows the full list as before.
+- **Categories** next to the search box: monsters by creature type (Beast, Humanoid...) or classification (Elite, Rare...), loot by item type (Weapon, Trade Goods...) and subtype (Armor: Cloth / Leather / Mail / Plate, Weapon: One-Handed Swords, Staves...) or quest items. Subtypes fold out under their type with the +/- button, or all at once with *Expand all* / *Collapse all*. "All" shows the full list as before.
+- **Zone filter** next to the categories, for monsters (where they were killed) and gathering sources (where they were looted). It combines with the category, e.g. Beasts in Westfall, and each menu counts what the other one leaves
 
 ### Convenience
 - Search and sorting in both journals, with click-through between monsters and items

@@ -666,21 +666,25 @@ function St.AllDrops(minCorpses, V)
 end
 
 ---------------------------------------------------------------------------
--- Categories (the list filter next to the search box)
---   monsters: "type:<creature type>", "class:<classification>" or "zone:<zone it was killed in>"
+-- Categories and zones (the list filters next to the search box; they combine)
+--   monsters: "type:<creature type>" or "class:<classification>"
 --   loot:     "itype:<item type>", "isub:<item type>:<subtype>" (Armor:Cloth, Weapon:Staves)
 --             or "quest"
 --   gathering: "gkind:<herb|mine|fishing|object|container>"
 -- nil = no category (the full list).
+-- Zone (monsters: where it was killed, gathering: where it was looted): a zone name, or nil for all.
 ---------------------------------------------------------------------------
 local OTHER = "Other"
+
+local function inZone(e, zone)
+	return not zone or (e.zones ~= nil and e.zones[zone] ~= nil)
+end
 
 local function monsterInCategory(n, cat)
 	if not cat then return true end
 	local kind, value = cat:match("^(%a+):(.*)$")
 	if kind == "type" then return (n.type or OTHER) == value end
 	if kind == "class" then return (n.class or "normal") == value end
-	if kind == "zone" then return n.zones[value] ~= nil end
 	return true
 end
 
@@ -695,12 +699,15 @@ local function itemInCategory(g, cat)
 end
 
 -- Categories present in the view: { { key, kind, value, count }, ... } sorted by count.
-local function collect(tbl, keysOf)
+-- Only entries in zone (if given) are counted, so the menu matches the zone filter.
+local function collect(tbl, keysOf, zone)
 	local counts, kinds = {}, {}
 	for _, e in pairs(tbl) do
-		for _, k in ipairs(keysOf(e)) do
-			counts[k[1]] = (counts[k[1]] or 0) + 1
-			kinds[k[1]] = k
+		if inZone(e, zone) then
+			for _, k in ipairs(keysOf(e)) do
+				counts[k[1]] = (counts[k[1]] or 0) + 1
+				kinds[k[1]] = k
+			end
 		end
 	end
 	local list = {}
@@ -716,16 +723,38 @@ local function collect(tbl, keysOf)
 	return list
 end
 
-function St.MonsterCategories(V)
+function St.MonsterCategories(V, zone)
 	V = V or St.View()
 	return collect(V.npcs, function(n)
 		local t = n.type or OTHER
 		local keys = { { "type:" .. t, "type", t } }
 		local cl = n.class or "normal"
 		if cl ~= "normal" then keys[#keys + 1] = { "class:" .. cl, "class", cl } end
-		for zone in pairs(n.zones) do keys[#keys + 1] = { "zone:" .. zone, "zone", zone } end
 		return keys
+	end, zone)
+end
+
+-- Zones of the entries that pass keep: { { zone, count }, ... }, most entries first.
+local function zonesOf(tbl, keep)
+	local counts = {}
+	for id, e in pairs(tbl) do
+		if keep(id, e) then
+			for zone in pairs(e.zones or {}) do counts[zone] = (counts[zone] or 0) + 1 end
+		end
+	end
+	local list = {}
+	for zone, count in pairs(counts) do list[#list + 1] = { zone = zone, count = count } end
+	table.sort(list, function(a, b)
+		if a.count ~= b.count then return a.count > b.count end
+		return a.zone < b.zone
 	end)
+	return list
+end
+
+-- Zones monsters (in category) were killed in.
+function St.MonsterZones(V, category)
+	V = V or St.View()
+	return zonesOf(V.npcs, function(_, n) return monsterInCategory(n, category) end)
 end
 
 -- Item types, each followed by its subtypes when it has more than one. A type with subtypes
@@ -766,9 +795,16 @@ function St.ItemCategories(V)
 	return list
 end
 
-function St.NodeCategories(V)
+function St.NodeCategories(V, zone)
 	V = V or St.View()
-	return collect(V.nodes, function(nd) return { { "gkind:" .. nd.kind, "gkind", nd.kind } } end)
+	return collect(V.nodes, function(nd) return { { "gkind:" .. nd.kind, "gkind", nd.kind } } end, zone)
+end
+
+-- Zones gathering sources (in category) were looted in.
+function St.NodeZones(V, category)
+	V = V or St.View()
+	local kind = category and category:match("^gkind:(.*)$")
+	return zonesOf(V.nodes, function(_, nd) return not kind or nd.kind == kind end)
 end
 
 ---------------------------------------------------------------------------
@@ -803,13 +839,13 @@ local function matches(q, name, id)
 	return name:lower():find(q, 1, true) ~= nil
 end
 
-function St.MonsterList(query, sortKey, category, V)
+function St.MonsterList(query, sortKey, category, V, zone)
 	V = V or St.View()
 	local q = query and query ~= "" and query:lower() or nil
 	local out = {}
 	for id, n in pairs(V.npcs) do
 		local name = n.name or ("NPC #" .. id)
-		if monsterInCategory(n, category) and matches(q, name, id) then
+		if monsterInCategory(n, category) and inZone(n, zone) and matches(q, name, id) then
 			local e = { id = id, name = name, n = n }
 			if sortKey == "value" then e.v = St.NPCValuePerCorpse(n) or 0 end
 			if sortKey == "items" then e.v = MJ.Count(n.items) end
@@ -869,13 +905,13 @@ function St.ItemList(query, sortKey, category, V)
 	return out
 end
 
-function St.NodeList(query, sortKey, category, V)
+function St.NodeList(query, sortKey, category, V, zone)
 	V = V or St.View()
 	local q = query and query ~= "" and query:lower() or nil
 	local kind = category and category:match("^gkind:(.*)$")
 	local out = {}
 	for key, nd in pairs(V.nodes) do
-		if (not kind or nd.kind == kind) and matches(q, nd.name, key) then
+		if (not kind or nd.kind == kind) and inZone(nd, zone) and matches(q, nd.name, key) then
 			local e = { id = key, name = nd.name, nd = nd }
 			if sortKey == "value" then e.v = St.NodeValuePer(nd) or 0 end
 			out[#out + 1] = e

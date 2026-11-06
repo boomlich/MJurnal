@@ -32,6 +32,7 @@ UI.state = {
 		[TAB_GATHER] = sortIndex(TAB_GATHER, DEFAULT_SORT),
 	},
 	category = {}, -- [tab] = category key (see Stats.lua), nil = the full list
+	zone = {},     -- [tab] = zone name, nil = every zone (monsters and gathering)
 }
 
 local function hasList(tab) return SORTS[tab] ~= nil end
@@ -101,7 +102,7 @@ end
 local function MonsterElements()
 	local sortKey = currentSortKey(TAB_MONSTERS)
 	local out = {}
-	for _, e in ipairs(St.MonsterList(UI.state.search[TAB_MONSTERS], sortKey, UI.state.category[TAB_MONSTERS])) do
+	for _, e in ipairs(St.MonsterList(UI.state.search[TAB_MONSTERS], sortKey, UI.state.category[TAB_MONSTERS], nil, UI.state.zone[TAB_MONSTERS])) do
 		local count
 		if sortKey == "value" then
 			count = MJ.Money(e.v)
@@ -146,7 +147,7 @@ end
 local function GatherElements()
 	local sortKey = currentSortKey(TAB_GATHER)
 	local out = {}
-	for _, e in ipairs(St.NodeList(UI.state.search[TAB_GATHER], sortKey, UI.state.category[TAB_GATHER])) do
+	for _, e in ipairs(St.NodeList(UI.state.search[TAB_GATHER], sortKey, UI.state.category[TAB_GATHER], nil, UI.state.zone[TAB_GATHER])) do
 		local nd, count = e.nd, nil
 		if sortKey == "value" then
 			count = nd.count and MJ.Money(e.v) or UI.Grey("-")
@@ -179,6 +180,7 @@ function UI:RefreshList(keepScroll)
 	local sorts = sortsFor(self.state.tab)
 	self.sortButton:SetText("Sort: " .. sorts[self.state.sort[self.state.tab]].label)
 	self.categoryButton:SetText(UI.CategoryLabel(self.state.tab, self.state.category[self.state.tab]))
+	self.zoneButton:SetText(UI.ZoneLabel(self.state.zone[self.state.tab]))
 	self.countText:SetText(MJ.Num(#elements) .. COUNT_NOUN[self.state.tab])
 end
 
@@ -270,15 +272,8 @@ local function charMenu()
 end
 
 local CATEGORY_TITLES = {
-	type = "Creature type", class = "Classification", zone = "Zone (where it was killed)",
-	itype = "Item type", quest = "Quest", gkind = "Source",
+	type = "Creature type", class = "Classification", itype = "Item type", quest = "Quest", gkind = "Source",
 }
--- Category sections that fold in and out in the menu (kept between sessions): [kind] = true when closed
-local function collapsedKinds()
-	MJ.db.ui.collapsedKinds = MJ.db.ui.collapsedKinds or {}
-	return MJ.db.ui.collapsedKinds
-end
-local FOLDING_KINDS = { zone = true }
 
 -- Button text for a category: "Beast", "Elite", "Weapon", "Cloth (Armor)", "Quest items"
 function UI.CategoryLabel(tab, key)
@@ -286,7 +281,6 @@ function UI.CategoryLabel(tab, key)
 	local kind, value = key:match("^(%a+):(.*)$")
 	if kind == "class" then value = UI.CLASS_LABEL[value] or value end
 	if kind == "gkind" then value = UI.NODE_KIND[value] or value end
-	if kind == "zone" then value = value .. " (zone)" end
 	if kind == "isub" then
 		local itype, sub = value:match("^([^:]*):(.*)$")
 		value = sub .. " (" .. itype .. ")"
@@ -296,10 +290,11 @@ function UI.CategoryLabel(tab, key)
 end
 
 local ALL_LABEL = { [TAB_MONSTERS] = "All monsters", [TAB_LOOT] = "All items", [TAB_GATHER] = "All sources" }
+-- Categories of a tab; counts follow the zone filter so both menus match the list.
 local CATEGORIES = {
-	[TAB_MONSTERS] = function() return St.MonsterCategories() end,
+	[TAB_MONSTERS] = function() return St.MonsterCategories(nil, UI.state.zone[TAB_MONSTERS]) end,
 	[TAB_LOOT] = function() return St.ItemCategories() end,
-	[TAB_GATHER] = function() return St.NodeCategories() end,
+	[TAB_GATHER] = function() return St.NodeCategories(nil, UI.state.zone[TAB_GATHER]) end,
 }
 
 -- Item types whose subtypes are shown in the loot category menu (kept between sessions).
@@ -337,27 +332,17 @@ local function categoryMenu()
 	end
 
 	local lastKind
-	local closed = collapsedKinds()
 	for _, cat in ipairs(cats) do
 		if cat.kind ~= lastKind then
 			entries[#entries + 1] = { separator = true }
-			local kind = cat.kind
-			entries[#entries + 1] = {
-				text = CATEGORY_TITLES[kind] or kind, title = true,
-				toggle = FOLDING_KINDS[kind] and {
-					expanded = not closed[kind],
-					onClick = function() closed[kind] = not closed[kind] or nil end,
-				} or nil,
-			}
-			lastKind = kind
+			entries[#entries + 1] = { text = CATEGORY_TITLES[cat.kind] or cat.kind, title = true }
+			lastKind = cat.kind
 		end
-		-- subtypes are listed indented under their item type, while it is expanded;
-		-- a folded section (zones) lists only its current pick
-		local folded = closed[cat.kind] and current ~= cat.key
-		if not folded and (not cat.sub or expanded[cat.parent]) then
+		-- subtypes are listed indented under their item type, while it is expanded
+		if not cat.sub or expanded[cat.parent] then
 			local value = cat.value
 			entries[#entries + 1] = {
-				text = ((cat.sub or cat.kind == "zone") and cat.value or UI.CategoryLabel(tab, cat.key)) .. UI.Grey("  " .. MJ.Num(cat.count)),
+				text = (cat.sub and cat.value or UI.CategoryLabel(tab, cat.key)) .. UI.Grey("  " .. MJ.Num(cat.count)),
 				indent = cat.sub and 14 or nil,
 				checked = current == cat.key, onClick = pick(cat),
 				toggle = cat.hasSubs and {
@@ -366,6 +351,40 @@ local function categoryMenu()
 				} or nil,
 			}
 		end
+	end
+	return entries
+end
+
+-- Zone filter (monsters: where it was killed, gathering: where it was looted)
+local ZONES = {
+	[TAB_MONSTERS] = function() return St.MonsterZones(nil, UI.state.category[TAB_MONSTERS]) end,
+	[TAB_GATHER] = function() return St.NodeZones(nil, UI.state.category[TAB_GATHER]) end,
+}
+
+function UI.ZoneLabel(zone)
+	return zone or "Zone: All"
+end
+
+-- Zones of the current tab; counts follow the category filter so both menus match the list.
+local function zoneMenu()
+	local tab = UI.state.tab
+	local current = UI.state.zone[tab]
+	local function pick(zone)
+		return function()
+			UI.state.zone[tab] = zone
+			UI:Reload()
+		end
+	end
+	local entries = {
+		{ text = "All zones", checked = current == nil, onClick = pick(nil) },
+		{ separator = true },
+		{ text = tab == TAB_MONSTERS and "Where it was killed" or "Where it was looted", title = true },
+	}
+	for _, z in ipairs(ZONES[tab]()) do
+		entries[#entries + 1] = {
+			text = z.zone .. UI.Grey("  " .. MJ.Num(z.count)),
+			checked = current == z.zone, onClick = pick(z.zone),
+		}
 	end
 	return entries
 end
@@ -424,6 +443,7 @@ function UI:SelectTab(tab)
 	self.search:SetShown(list)
 	self.sortButton:SetShown(list)
 	self.categoryButton:SetShown(list)
+	self.zoneButton:SetShown(ZONES[tab] ~= nil)
 	self.countText:SetShown(list)
 	self.headerText:SetShown(not list)
 	self:UpdateHeader()
@@ -518,6 +538,12 @@ function UI:Build()
 	categoryButton:SetPoint("LEFT", sortButton, "RIGHT", 6, 0)
 	categoryButton:SetScript("OnClick", function(b) UI.ToggleMenu(b, categoryMenu) end)
 	self.categoryButton = categoryButton
+
+	local zoneButton = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+	zoneButton:SetSize(150, 22)
+	zoneButton:SetPoint("LEFT", categoryButton, "RIGHT", 6, 0)
+	zoneButton:SetScript("OnClick", function(b) UI.ToggleMenu(b, zoneMenu) end)
+	self.zoneButton = zoneButton
 
 	local countText = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 	countText:SetPoint("TOPLEFT", list, "BOTTOMLEFT", 6, -6)
@@ -655,6 +681,7 @@ function UI:Open(tab, id)
 		-- make sure the entry is visible in the list
 		self.state.search[tab] = ""
 		self.state.category[tab] = nil
+		self.state.zone[tab] = nil
 	end
 	if id then self.state.selected[tab] = id end
 	self.state.tab = tab
@@ -674,6 +701,7 @@ function UI:Search(tab, text)
 	text = text or ""
 	-- a search looks through the full list; select the first row in the current sort order
 	self.state.category[TAB_MONSTERS], self.state.category[TAB_LOOT] = nil, nil
+	self.state.zone[TAB_MONSTERS], self.state.zone[TAB_GATHER] = nil, nil
 	if tab == TAB_GATHER then
 		self.state.category[TAB_GATHER] = nil
 		self.state.search[TAB_GATHER] = text
